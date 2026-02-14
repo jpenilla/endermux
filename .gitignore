@@ -28,3 +28,5 @@ bin/
 # fabric
 
 run/
+
+/endermux-client-dist/

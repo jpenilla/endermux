@@ -21,3 +21,14 @@ jobs:
         uses: gradle/actions/setup-gradle@v5
       - name: "build"
         run: "./gradlew build"
+      - name: "extract client dist"
+        run: |
+          mkdir -p endermux-client-dist
+          for archive in endermux-client/build/distributions/*.tar; do
+            tar -xf "$archive" -C endermux-client-dist
+          done
+      - name: "upload artifacts"
+        uses: actions/upload-artifact@v6
+        with:
+          name: 'endermux-client'
+          path: 'endermux-client-dist/*'
