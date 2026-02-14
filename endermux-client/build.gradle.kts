@@ -3,9 +3,6 @@ plugins {
   application
 }
 
-version = "0.0.1-SNAPSHOT"
-group = "xyz.jpenilla"
-
 indra {
   javaVersions().target(25)
 }
