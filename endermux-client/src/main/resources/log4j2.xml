@@ -3,10 +3,10 @@
   <Appenders>
     <InteractiveConsoleAppender name="Interactive">
       <PatternLayout>
-        <EndermuxLoggerNamePatternSelector defaultPattern="%EndermuxHighlightError{endermux-client| [%d{HH:mm:ss} %level] [%logger{1}]: %msg%n%xEx}">
+        <EndermuxLoggerNamePatternSelector defaultPattern="%EndermuxHighlightError{endermux-client| [%d{HH:mm:ss} %level] [%logger{1}]: %msg%n%xEx{full}}">
           <!-- Don't duplicate prefix -->
           <PatternMatch key="xyz.jpenilla.endermux.client.runtime.EndermuxClient"
-                        pattern="%EndermuxHighlightError{endermux-client| [%d{HH:mm:ss} %level]: %msg%n%xEx}" />
+                        pattern="%EndermuxHighlightError{endermux-client| [%d{HH:mm:ss} %level]: %msg%n%xEx{full}}" />
         </EndermuxLoggerNamePatternSelector>
       </PatternLayout>
     </InteractiveConsoleAppender>

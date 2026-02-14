@@ -1,6 +1,10 @@
 package xyz.jpenilla.endermux.client;
 
 import java.util.concurrent.Callable;
+import net.kyori.adventure.text.Component;
+import net.kyori.adventure.text.format.NamedTextColor;
+import net.kyori.adventure.text.format.TextDecoration;
+import net.kyori.adventure.text.serializer.ansi.ANSIComponentSerializer;
 import org.apache.logging.log4j.Level;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.core.LoggerContext;
@@ -15,6 +19,8 @@ import xyz.jpenilla.endermux.client.runtime.EndermuxClient;
 import xyz.jpenilla.endermux.client.runtime.StreamRedirection;
 import xyz.jpenilla.endermux.client.runtime.TerminalOutput;
 
+import static net.kyori.adventure.text.Component.text;
+
 @Command(
   name = "endermux-client",
   mixinStandardHelpOptions = true,
@@ -24,6 +30,12 @@ import xyz.jpenilla.endermux.client.runtime.TerminalOutput;
 @NullMarked
 public final class EndermuxCli implements Callable<Integer> {
   private static final Logger LOGGER = LoggerFactory.getLogger(EndermuxCli.class);
+
+  public static final Component VERSION_MESSAGE = text()
+    .append(text("Endermux", NamedTextColor.DARK_PURPLE, TextDecoration.BOLD))
+    .append(text(" Client ").decorate(TextDecoration.BOLD))
+    .append(text("v" + EndermuxCli.class.getPackage().getImplementationVersion()))
+    .build();
 
   @Option(
     names = {"--socket", "-s"},
@@ -71,8 +83,7 @@ public final class EndermuxCli implements Callable<Integer> {
     @Override
     public String[] getVersion() {
       return new String[]{
-        "Endermux Client",
-        EndermuxCli.class.getPackage().getImplementationVersion()
+        ANSIComponentSerializer.ansi().serialize(VERSION_MESSAGE)
       };
     }
   }

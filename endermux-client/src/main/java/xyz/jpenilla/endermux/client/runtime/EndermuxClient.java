@@ -18,6 +18,7 @@ import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import xyz.jpenilla.endermux.client.EndermuxCli;
 
 import static net.kyori.adventure.text.Component.text;
 
@@ -40,11 +41,7 @@ public final class EndermuxClient {
   public void run(final String socketPath) throws Exception {
     this.terminalContext = TerminalRuntimeContext.create();
 
-    LOGGER.info(text()
-      .append(text("Endermux", NamedTextColor.DARK_PURPLE, TextDecoration.BOLD))
-      .append(text(" Client ").decorate(TextDecoration.BOLD))
-      .append(text("v" + getClass().getPackage().getImplementationVersion()))
-      .build());
+    LOGGER.info(EndermuxCli.VERSION_MESSAGE);
 
     try {
       this.registerSignalHandlers();
