@@ -8,7 +8,7 @@ import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.Layout;
 import org.apache.logging.log4j.core.LogEvent;
 import org.jspecify.annotations.NullMarked;
-import xyz.jpenilla.endermux.log4j.RenderColorContext;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 import xyz.jpenilla.endermux.server.EndermuxServer;
 
 @NullMarked
@@ -43,7 +43,7 @@ public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogF
   }
 
   private String render(final LogEvent event, final ColorLevel colorLevel) {
-    try (final RenderColorContext.Scope _ = RenderColorContext.push(colorLevel)) {
+    try (final ColorLevelContext.Scope _ = ColorLevelContext.push(colorLevel)) {
       return this.renderedLogLayout.toSerializable(event).toString();
     }
   }

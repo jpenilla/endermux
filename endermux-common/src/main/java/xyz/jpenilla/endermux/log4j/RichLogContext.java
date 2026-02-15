@@ -8,6 +8,7 @@ import org.apache.logging.log4j.ThreadContext;
 import org.apache.logging.log4j.util.ReadOnlyStringMap;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 
 @NullMarked
 public final class RichLogContext {
@@ -17,11 +18,6 @@ public final class RichLogContext {
   private static final String KEY_INDEXED_16 = KEY_PREFIX + "indexed16";
   private static final String KEY_INDEXED_256 = KEY_PREFIX + "indexed256";
   private static final String KEY_TRUE_COLOR = KEY_PREFIX + "trueColor";
-  private static final ANSIComponentSerializer ANSI_NONE = serializer(ColorLevel.NONE);
-  private static final ANSIComponentSerializer ANSI_INDEXED_8 = serializer(ColorLevel.INDEXED_8);
-  private static final ANSIComponentSerializer ANSI_INDEXED_16 = serializer(ColorLevel.INDEXED_16);
-  private static final ANSIComponentSerializer ANSI_INDEXED_256 = serializer(ColorLevel.INDEXED_256);
-  private static final ANSIComponentSerializer ANSI_TRUE_COLOR = serializer(ColorLevel.TRUE_COLOR);
 
   private RichLogContext() {
   }
@@ -38,11 +34,11 @@ public final class RichLogContext {
 
   public static Scope pushComponent(final Component component) {
     return pushRenderedByColorLevel(
-      ANSI_NONE.serialize(component),
-      ANSI_INDEXED_8.serialize(component),
-      ANSI_INDEXED_16.serialize(component),
-      ANSI_INDEXED_256.serialize(component),
-      ANSI_TRUE_COLOR.serialize(component)
+      ColorLevelContext.ANSI_NONE.serialize(component),
+      ColorLevelContext.ANSI_INDEXED_8.serialize(component),
+      ColorLevelContext.ANSI_INDEXED_16.serialize(component),
+      ColorLevelContext.ANSI_INDEXED_256.serialize(component),
+      ColorLevelContext.ANSI_TRUE_COLOR.serialize(component)
     );
   }
 

@@ -16,6 +16,7 @@ import org.apache.logging.log4j.core.pattern.PatternFormatter;
 import org.apache.logging.log4j.core.pattern.PatternParser;
 import org.apache.logging.log4j.util.PerformanceSensitive;
 import org.apache.logging.log4j.util.PropertiesUtil;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 
 /**
  * Modified version of Paper's HexFormattingConverter to work with Kyori '§#rrggbb' format
@@ -117,7 +118,7 @@ public final class HexFormattingConverter extends LogEventPatternConverter {
             return;
         }
 
-        final ColorLevel colorLevel = RenderColorContext.current();
+        final ColorLevel colorLevel = ColorLevelContext.current();
         boolean useAnsi = ansi && colorLevel != ColorLevel.NONE;
         String content = toAppendTo.substring(start);
         content = useAnsi ? convertRGBColors(content) : stripRGBColors(content);

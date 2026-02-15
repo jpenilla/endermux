@@ -12,6 +12,7 @@ import org.apache.logging.log4j.core.pattern.PatternFormatter;
 import org.apache.logging.log4j.core.pattern.PatternParser;
 import org.apache.logging.log4j.util.PerformanceSensitive;
 import org.jspecify.annotations.Nullable;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 
 @Plugin(name = "EndermuxRichMessage", category = PatternConverter.CATEGORY)
 @ConverterKeys({"EndermuxRichMessage"})
@@ -28,7 +29,7 @@ public final class RichMessageConverter extends LogEventPatternConverter {
   public void format(final LogEvent event, final StringBuilder toAppendTo) {
     final @Nullable String richMessage = RichLogContext.renderedFor(
       event.getContextData(),
-      RenderColorContext.current()
+      ColorLevelContext.current()
     );
     if (richMessage != null) {
       toAppendTo.append(richMessage);

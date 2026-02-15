@@ -12,11 +12,13 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.List;
 import java.util.UUID;
 import net.kyori.ansi.ColorLevel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
@@ -193,6 +195,78 @@ class EndermuxServerIntegrationTest {
       assertEquals(MessageType.LOG_FORWARD, forwarded.type());
       final Payloads.LogForward payload = (Payloads.LogForward) forwarded.payload();
       assertEquals("hello from server", payload.rendered());
+    }
+  }
+
+  @Test
+  void completionRequestUsesSessionColorContext() throws Exception {
+    final Path socket = this.startServer();
+    this.server.enableInteractivity(InteractiveConsoleHooks.builder()
+      .completer((command, cursor) -> new Payloads.CompletionResponse(List.of(
+        new Payloads.CompletionResponse.CandidateInfo(
+          "value",
+          "display",
+          ColorLevelContext.current().name()
+        )
+      )))
+      .build());
+
+    try (TestClient noneClient = TestClient.connect(socket); TestClient trueColorClient = TestClient.connect(socket)) {
+      final String noneHelloRequestId = UUID.randomUUID().toString();
+      noneClient.send(Message.response(
+        noneHelloRequestId,
+        MessageType.HELLO,
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.NONE)
+      ));
+      final Message<?> noneWelcome = noneClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(noneWelcome);
+      assertEquals(MessageType.WELCOME, noneWelcome.type());
+      assertEquals(noneHelloRequestId, noneWelcome.requestId());
+      final Message<?> noneStatus = noneClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(noneStatus);
+      assertEquals(MessageType.INTERACTIVITY_STATUS, noneStatus.type());
+      assertTrue(((Payloads.InteractivityStatus) noneStatus.payload()).available());
+
+      final String trueColorHelloRequestId = UUID.randomUUID().toString();
+      trueColorClient.send(Message.response(
+        trueColorHelloRequestId,
+        MessageType.HELLO,
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.TRUE_COLOR)
+      ));
+      final Message<?> trueColorWelcome = trueColorClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(trueColorWelcome);
+      assertEquals(MessageType.WELCOME, trueColorWelcome.type());
+      assertEquals(trueColorHelloRequestId, trueColorWelcome.requestId());
+      final Message<?> trueColorStatus = trueColorClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(trueColorStatus);
+      assertEquals(MessageType.INTERACTIVITY_STATUS, trueColorStatus.type());
+      assertTrue(((Payloads.InteractivityStatus) trueColorStatus.payload()).available());
+
+      final String noneCompletionRequestId = UUID.randomUUID().toString();
+      noneClient.send(Message.response(
+        noneCompletionRequestId,
+        MessageType.COMPLETION_REQUEST,
+        new Payloads.CompletionRequest("help", 4)
+      ));
+      final Message<?> noneCompletionResponse = noneClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(noneCompletionResponse);
+      assertEquals(MessageType.COMPLETION_RESPONSE, noneCompletionResponse.type());
+      assertEquals(noneCompletionRequestId, noneCompletionResponse.requestId());
+      final Payloads.CompletionResponse nonePayload = (Payloads.CompletionResponse) noneCompletionResponse.payload();
+      assertEquals(ColorLevel.NONE.name(), nonePayload.candidates().get(0).description());
+
+      final String trueColorCompletionRequestId = UUID.randomUUID().toString();
+      trueColorClient.send(Message.response(
+        trueColorCompletionRequestId,
+        MessageType.COMPLETION_REQUEST,
+        new Payloads.CompletionRequest("help", 4)
+      ));
+      final Message<?> trueColorCompletionResponse = trueColorClient.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(trueColorCompletionResponse);
+      assertEquals(MessageType.COMPLETION_RESPONSE, trueColorCompletionResponse.type());
+      assertEquals(trueColorCompletionRequestId, trueColorCompletionResponse.requestId());
+      final Payloads.CompletionResponse trueColorPayload = (Payloads.CompletionResponse) trueColorCompletionResponse.payload();
+      assertEquals(ColorLevel.TRUE_COLOR.name(), trueColorPayload.candidates().get(0).description());
     }
   }
 

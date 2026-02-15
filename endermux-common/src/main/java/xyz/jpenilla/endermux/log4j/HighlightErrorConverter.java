@@ -39,6 +39,7 @@ import org.apache.logging.log4j.core.pattern.PatternFormatter;
 import org.apache.logging.log4j.core.pattern.PatternParser;
 import org.apache.logging.log4j.util.PerformanceSensitive;
 import org.jspecify.annotations.Nullable;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 
 /**
  * A simplified version of {@link HighlightConverter} that detects
@@ -75,7 +76,7 @@ public final class HighlightErrorConverter extends LogEventPatternConverter {
 
     @Override
     public void format(LogEvent event, StringBuilder toAppendTo) {
-        if (RenderColorContext.current() != ColorLevel.NONE) {
+        if (ColorLevelContext.current() != ColorLevel.NONE) {
             Level level = event.getLevel();
             if (level.isMoreSpecificThan(Level.ERROR)) {
                 format(ANSI_ERROR, event, toAppendTo);

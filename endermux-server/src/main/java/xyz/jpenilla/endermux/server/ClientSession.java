@@ -6,6 +6,7 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageType;
@@ -70,11 +71,14 @@ public final class ClientSession implements Consumer<Message<?>> {
       return;
     }
 
-    final boolean handled = this.handlerRegistry.handle(
-      message.type(),
-      message.payload(),
-      ctx
-    );
+    final boolean handled;
+    try (final ColorLevelContext.Scope _ = ColorLevelContext.push(this.colorLevel)) {
+      handled = this.handlerRegistry.handle(
+        message.type(),
+        message.payload(),
+        ctx
+      );
+    }
 
     if (!handled) {
       ctx.error("Unknown message type: " + message.type());
