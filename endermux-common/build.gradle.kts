@@ -13,6 +13,7 @@ dependencies {
   compileOnlyApi(libs.jspecify)
 
   api(libs.adventureApi)
+  api(libs.ansi)
   implementation(libs.adventureTextSerializerAnsi)
 
   implementation(platform(libs.log4jBom))

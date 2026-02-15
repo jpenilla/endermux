@@ -18,13 +18,13 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
+import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.jpenilla.endermux.protocol.ConnectionState;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
-import xyz.jpenilla.endermux.protocol.LayoutConfig;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
@@ -51,7 +51,6 @@ public final class SocketTransport {
   private @Nullable DataOutputStream writer;
   private volatile @Nullable TransportMessageHandler messageHandler;
   private volatile @Nullable Runnable disconnectCallback;
-  private volatile @Nullable LayoutConfig serverLogLayout;
   private volatile boolean interactivityAvailable;
 
   public SocketTransport(final String socketPath) {
@@ -228,16 +227,12 @@ public final class SocketTransport {
     this.disconnectCallback = callback;
   }
 
-  public @Nullable LayoutConfig serverLogLayout() {
-    return this.serverLogLayout;
-  }
-
   public boolean isInteractivityAvailable() {
     return this.interactivityAvailable;
   }
 
   private void performHandshake() throws IOException, ProtocolMismatchException {
-    final Payloads.Hello hello = new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION);
+    final Payloads.Hello hello = new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.compute());
     final Message<Payloads.Hello> helloMessage = Message.<Payloads.Hello>builder(MessageType.HELLO)
       .requestId(UUID.randomUUID())
       .payload(hello)
@@ -271,8 +266,6 @@ public final class SocketTransport {
         SocketProtocolConstants.PROTOCOL_VERSION
       );
     }
-
-    this.serverLogLayout = welcome.logLayout();
   }
 
   private @Nullable Message<?> readMessageWithTimeout(final long timeoutMs) throws IOException {

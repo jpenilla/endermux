@@ -9,6 +9,7 @@ import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.util.EnumMap;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -17,11 +18,12 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import xyz.jpenilla.endermux.protocol.LayoutConfig;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
@@ -47,7 +49,6 @@ public final class EndermuxServer {
   private final Path socketPath;
   private final Path socketStartupPath;
   private final int maxConnections;
-  private final LayoutConfig logLayout;
   private final AtomicReference<@Nullable InteractiveConsoleHooks> interactiveHooks = new AtomicReference<>();
 
   private final AtomicBoolean running = new AtomicBoolean(false);
@@ -57,11 +58,9 @@ public final class EndermuxServer {
   private Thread acceptorThread;
 
   public EndermuxServer(
-    final LayoutConfig logLayout,
     final Path socketPath,
     final int maxConnections
   ) {
-    this.logLayout = logLayout;
     this.socketPath = socketPath;
     this.socketStartupPath = this.socketPath.resolveSibling(
       "." + this.socketPath.getFileName() + ".starting." + ProcessHandle.current().pid()
@@ -161,10 +160,12 @@ public final class EndermuxServer {
 
   private void runConnection(final ClientEndpoint connection, final ClientSession session) {
     try {
-      if (!this.performHandshake(connection)) {
+      final Payloads.Hello hello = this.performHandshake(connection);
+      if (hello == null) {
         connection.close();
         return;
       }
+      session.setColorLevel(hello.colorLevel());
 
       this.sessions.put(connection, session);
       this.connections.add(connection);
@@ -179,25 +180,30 @@ public final class EndermuxServer {
     }
   }
 
-  private boolean performHandshake(final ClientEndpoint connection) throws IOException {
+  private Payloads.@Nullable Hello performHandshake(final ClientEndpoint connection) throws IOException {
     final Message<?> message = connection.readInitialMessage(SocketProtocolConstants.HANDSHAKE_TIMEOUT_MS);
     final @Nullable String requestId = message.requestId();
     if (requestId == null) {
       this.sendHandshakeResponse(connection, null, new Payloads.Reject("Missing requestId", SocketProtocolConstants.PROTOCOL_VERSION));
-      return false;
+      return null;
     }
     if (message.type() != MessageType.HELLO || !(message.payload() instanceof Payloads.Hello hello)) {
       this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Expected HELLO", SocketProtocolConstants.PROTOCOL_VERSION));
-      return false;
+      return null;
     }
 
     if (hello.protocolVersion() != SocketProtocolConstants.PROTOCOL_VERSION) {
       this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Unsupported protocol version", SocketProtocolConstants.PROTOCOL_VERSION));
-      return false;
+      return null;
+    }
+
+    if (hello.colorLevel() == null) {
+      this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Missing color level", SocketProtocolConstants.PROTOCOL_VERSION));
+      return null;
     }
 
     this.sendHandshakeResponse(connection, requestId, this.welcomePayload());
-    return true;
+    return hello;
   }
 
   private void sendHandshakeResponse(
@@ -215,10 +221,7 @@ public final class EndermuxServer {
   }
 
   private Payloads.Welcome welcomePayload() {
-    return new Payloads.Welcome(
-      SocketProtocolConstants.PROTOCOL_VERSION,
-      this.logLayout
-    );
+    return new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION);
   }
 
   private void closeServerChannel() {
@@ -293,13 +296,18 @@ public final class EndermuxServer {
     }
   }
 
-  public void broadcastLog(final Payloads.LogForward payload) {
-    final Message<?> message = Message.unsolicited(MessageType.LOG_FORWARD, payload);
+  public void broadcastLog(final Function<ColorLevel, String> renderedByColorLevel) {
+    final EnumMap<ColorLevel, Message<Payloads.LogForward>> messages = new EnumMap<>(ColorLevel.class);
     for (final ClientEndpoint connection : this.connections) {
       final ClientSession session = this.sessions.get(connection);
-      if (session != null && session.isLogReady()) {
-        connection.send(message);
+      if (session == null || !session.isLogReady()) {
+        continue;
       }
+      final Message<Payloads.LogForward> message = messages.computeIfAbsent(
+        session.colorLevel(),
+        colorLevel -> Message.unsolicited(MessageType.LOG_FORWARD, new Payloads.LogForward(renderedByColorLevel.apply(colorLevel)))
+      );
+      connection.send(message);
     }
   }
 

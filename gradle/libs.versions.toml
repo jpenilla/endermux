@@ -4,6 +4,7 @@ log4j = "2.25.3"
 slf4j = "2.0.16"
 jline = "3.30.6"
 adventure = "4.26.1"
+kyoriAnsi = "1.1.1"
 jspecify = "1.0.0"
 picocli = "4.7.7"
 junit = "6.0.2"
@@ -26,6 +27,7 @@ jline-terminal-ffm = { module = "org.jline:jline-terminal-ffm", version.ref = "j
 gson = "com.google.code.gson:gson:2.10.1"
 
 adventureApi = { module = "net.kyori:adventure-api", version.ref = "adventure" }
+ansi = { module = "net.kyori:ansi", version.ref = "kyoriAnsi" }
 adventureTextSerializerAnsi = { module = "net.kyori:adventure-text-serializer-ansi", version.ref = "adventure" }
 adventureTextSerializerGson = { module = "net.kyori:adventure-text-serializer-gson", version.ref = "adventure" }
 adventureTextLoggerSlf4j = { module = "net.kyori:adventure-text-logger-slf4j", version.ref = "adventure" }

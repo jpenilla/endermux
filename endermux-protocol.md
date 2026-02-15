@@ -1,7 +1,7 @@
 # Endermux Protocol Specification
 
 Status: Active  
-Protocol version: `10`
+Protocol version: `11`
 
 This document defines the wire protocol implemented by `endermux-client` and `endermux-server`.
 
@@ -11,7 +11,7 @@ The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are to be in
 
 ## 2. Versioning
 
-1. The protocol version constant is `SocketProtocolConstants.PROTOCOL_VERSION` (`10`).
+1. The protocol version constant is `SocketProtocolConstants.PROTOCOL_VERSION` (`11`).
 2. The client MUST send its version in `HELLO.data.protocolVersion`.
 3. The server MUST compare the received version to its own version.
 4. If versions match, the server MUST reply `WELCOME`.
@@ -102,7 +102,7 @@ Handshake constraints:
 
 | Type | Payload fields |
 |---|---|
-| `HELLO` | `protocolVersion: int` |
+| `HELLO` | `protocolVersion: int`, `colorLevel: ColorLevel` |
 | `COMPLETION_REQUEST` | `command: string`, `cursor: int` |
 | `SYNTAX_HIGHLIGHT_REQUEST` | `command: string` |
 | `PARSE_REQUEST` | `command: string`, `cursor: int` |
@@ -114,12 +114,12 @@ Handshake constraints:
 
 | Type | Payload fields |
 |---|---|
-| `WELCOME` | `protocolVersion: int`, `logLayout: LayoutConfig` |
+| `WELCOME` | `protocolVersion: int` |
 | `REJECT` | `reason: string`, `expectedVersion: int` |
 | `COMPLETION_RESPONSE` | `candidates: CandidateInfo[]` |
 | `SYNTAX_HIGHLIGHT_RESPONSE` | `command: string`, `highlighted: string` |
 | `PARSE_RESPONSE` | `word: string`, `wordCursor: int`, `wordIndex: int`, `words: string[]`, `line: string`, `cursor: int` |
-| `LOG_FORWARD` | `logger: string`, `level: string`, `message: string`, `componentMessageJson: string?`, `throwable: ThrowableInfo?`, `timestamp: long`, `thread: string` |
+| `LOG_FORWARD` | `rendered: string` |
 | `PONG` | _(empty object)_ |
 | `ERROR` | `message: string`, `details: string?` |
 | `INTERACTIVITY_STATUS` | `available: boolean` |
@@ -134,68 +134,15 @@ Handshake constraints:
 | `display` | string |
 | `description` | string? |
 
-`ThrowableInfo`:
+`ColorLevel`:
 
-| Field | Type |
-|---|---|
-| `type` | string |
-| `message` | string? |
-| `frames` | `StackFrame[]` |
-| `cause` | `ThrowableInfo?` |
-| `suppressed` | `ThrowableInfo[]` |
-
-`StackFrame`:
-
-| Field | Type |
-|---|---|
-| `className` | string |
-| `methodName` | string |
-| `fileName` | string? |
-| `lineNumber` | int |
-| `classLoaderName` | string? |
-| `moduleName` | string? |
-| `moduleVersion` | string? |
-| `classInfo` | `StackFrameClassInfo?` |
-
-`StackFrameClassInfo`:
-
-| Field | Type |
-|---|---|
-| `exact` | boolean |
-| `location` | string |
-| `version` | string |
-
-`LayoutConfig`:
-
-| Field | Type | Notes |
-|---|---|---|
-| `type` | enum | `PATTERN` or `LOGGER_NAME_SELECTOR` |
-| `pattern` | string? | Active pattern |
-| `selector` | `SelectorConfig?` | Logger selector config |
-| `flags` | `Flags` | Layout behavior flags |
-| `charset` | string? | Charset name |
-
-`SelectorConfig`:
-
-| Field | Type |
-|---|---|
-| `defaultPattern` | string |
-| `matches` | `Match[]` |
-
-`Match`:
-
-| Field | Type |
-|---|---|
-| `key` | string |
-| `pattern` | string |
-
-`Flags`:
-
-| Field | Type |
-|---|---|
-| `alwaysWriteExceptions` | boolean |
-| `disableAnsi` | boolean |
-| `noConsoleNoAnsi` | boolean |
+| Value |
+|---|
+| `NONE` |
+| `INDEXED_8` |
+| `INDEXED_16` |
+| `INDEXED_256` |
+| `TRUE_COLOR` |
 
 ## 8. Request/Response Rules
 

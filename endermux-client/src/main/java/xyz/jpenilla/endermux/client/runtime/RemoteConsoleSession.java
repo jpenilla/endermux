@@ -9,11 +9,6 @@ import java.util.function.BooleanSupplier;
 import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
-import net.kyori.adventure.text.serializer.ansi.ANSIComponentSerializer;
-import net.kyori.adventure.text.serializer.gson.GsonComponentSerializer;
-import org.apache.logging.log4j.Level;
-import org.apache.logging.log4j.core.LogEvent;
-import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.Highlighter;
 import org.jline.reader.LineReader;
@@ -22,7 +17,6 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import xyz.jpenilla.endermux.client.transport.ProtocolMismatchException;
 import xyz.jpenilla.endermux.client.transport.SocketTransport;
-import xyz.jpenilla.endermux.protocol.LayoutConfig;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageType;
@@ -47,7 +41,6 @@ final class RemoteConsoleSession {
   private volatile @Nullable SocketTransport socketClient;
   private volatile boolean interactiveAvailable;
   private @Nullable LineReader lineReader;
-  private @Nullable PatternLayout logPatternLayout;
 
   RemoteConsoleSession(
     final String socketPath,
@@ -82,7 +75,6 @@ final class RemoteConsoleSession {
       this.lineReader = this.terminalContext.createLineReader(client, highlighter);
       TerminalOutput.setLineReader(this.lineReader);
 
-      this.logPatternLayout = this.createLogPattern(client);
       client.sendMessage(Message.unsolicited(MessageType.CLIENT_READY, new Payloads.ClientReady()));
 
       final boolean userQuit = this.acceptInput();
@@ -125,7 +117,6 @@ final class RemoteConsoleSession {
     }
     this.socketClient = null;
     this.lineReader = null;
-    this.logPatternLayout = null;
     TerminalOutput.setLineReader(null);
     synchronized (this.interactivityLock) {
       this.interactivityLock.notifyAll();
@@ -303,60 +294,11 @@ final class RemoteConsoleSession {
   }
 
   private void processLogMessage(final Payloads.LogForward logForward) {
-    final String logger = logForward.logger();
-    final String level = logForward.level();
-    String logMessage = logForward.message();
-    if (logForward.componentMessageJson() != null) {
-      logMessage = ANSIComponentSerializer.ansi().serialize(
-        GsonComponentSerializer.gson().deserialize(logForward.componentMessageJson())
-      );
-    }
-    final long timestamp = logForward.timestamp();
-    final String threadName = logForward.thread();
-
-    this.printLogMessage(this.formatLogMessage(
-      logger,
-      level,
-      logMessage,
-      timestamp,
-      threadName,
-      logForward.throwable()
-    ));
-  }
-
-  private String formatLogMessage(
-    final String logger,
-    final String level,
-    final String logMessage,
-    final long timestamp,
-    final String threadName,
-    final Payloads.@Nullable ThrowableInfo throwable
-  ) {
-    final PatternLayout layout = this.logPatternLayout;
-    if (layout == null) {
-      throw new IllegalStateException("Log pattern layout not initialized");
-    }
-    final LogEvent logEvent = new SimpleLogEvent(
-      logger,
-      Level.valueOf(level),
-      logMessage,
-      timestamp,
-      threadName,
-      throwable
-    );
-    return layout.toSerializable(logEvent);
+    this.printLogMessage(logForward.rendered());
   }
 
   private void printLogMessage(final String formattedMessage) {
     TerminalOutput.write(formattedMessage);
-  }
-
-  private PatternLayout createLogPattern(final SocketTransport client) {
-    final LayoutConfig layoutConfig = client.serverLogLayout();
-    if (layoutConfig == null) {
-      throw new IllegalStateException("No log layout available from server and no override provided");
-    }
-    return LayoutConfigLayoutBuilder.toPatternLayout(layoutConfig);
   }
 
   private void sendCommand(final SocketTransport client, final String input) {

@@ -19,7 +19,6 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
-import xyz.jpenilla.endermux.protocol.LayoutConfig;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
@@ -80,7 +79,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         requestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION + 1, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION + 1)
       ));
     })) {
       final SocketTransport transport = new SocketTransport(server.socketPath().toString());
@@ -100,7 +99,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -129,7 +128,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -158,7 +157,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -187,7 +186,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
       ));
       Thread.sleep(100L);
     })) {
@@ -218,7 +217,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION, layout())
+        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
       ));
       peer.write(Message.unsolicited(MessageType.INTERACTIVITY_STATUS, new Payloads.InteractivityStatus(true)));
       Thread.sleep(100L);
@@ -247,14 +246,12 @@ class SocketTransportIntegrationTest {
     return server;
   }
 
-  private static LayoutConfig layout() {
-    return LayoutConfig.pattern("%msg%n", new LayoutConfig.Flags(true, false, false), "UTF-8");
-  }
-
   private static String assertHello(final Message<?> hello) {
     assertNotNull(hello);
     assertEquals(MessageType.HELLO, hello.type());
     assertInstanceOf(Payloads.Hello.class, hello.payload());
+    final Payloads.Hello payload = (Payloads.Hello) hello.payload();
+    assertNotNull(payload.colorLevel());
     assertNotNull(hello.requestId());
     return hello.requestId();
   }

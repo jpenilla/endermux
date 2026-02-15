@@ -1,6 +1,7 @@
 package xyz.jpenilla.endermux.protocol;
 
 import java.util.List;
+import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 
@@ -12,7 +13,7 @@ public final class Payloads {
 
   // Client -> Server payloads
 
-  public record Hello(int protocolVersion) implements MessagePayload {
+  public record Hello(int protocolVersion, ColorLevel colorLevel) implements MessagePayload {
   }
 
   public record CompletionRequest(String command, int cursor) implements MessagePayload {
@@ -35,7 +36,7 @@ public final class Payloads {
 
   // Server -> Client payloads
 
-  public record Welcome(int protocolVersion, LayoutConfig logLayout) implements MessagePayload {
+  public record Welcome(int protocolVersion) implements MessagePayload {
   }
 
   public record Reject(String reason, int expectedVersion) implements MessagePayload {
@@ -60,42 +61,8 @@ public final class Payloads {
   }
 
   public record LogForward(
-    String logger,
-    String level,
-    String message,
-    @Nullable String componentMessageJson,
-    @Nullable ThrowableInfo throwable,
-    long timestamp,
-    String thread
+    String rendered
   ) implements MessagePayload {
-  }
-
-  public record ThrowableInfo(
-    String type,
-    @Nullable String message,
-    List<StackFrame> frames,
-    @Nullable ThrowableInfo cause,
-    List<ThrowableInfo> suppressed
-  ) {
-  }
-
-  public record StackFrame(
-    String className,
-    String methodName,
-    @Nullable String fileName,
-    int lineNumber,
-    @Nullable String classLoaderName,
-    @Nullable String moduleName,
-    @Nullable String moduleVersion,
-    @Nullable StackFrameClassInfo classInfo
-  ) {
-  }
-
-  public record StackFrameClassInfo(
-    boolean exact,
-    String location,
-    String version
-  ) {
   }
 
   public record Pong() implements MessagePayload {

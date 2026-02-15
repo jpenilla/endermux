@@ -62,7 +62,6 @@ public final class HighlightErrorConverter extends LogEventPatternConverter {
     private static final String ANSI_WARN = "\u001B[33;1m"; // Bold Yellow
 
     private final List<PatternFormatter> formatters;
-    private final boolean ansi;
 
   /**
      * Construct the converter.
@@ -72,12 +71,11 @@ public final class HighlightErrorConverter extends LogEventPatternConverter {
     protected HighlightErrorConverter(List<PatternFormatter> formatters) {
         super("EndermuxHighlightError", null);
         this.formatters = formatters;
-        this.ansi = ColorLevel.compute() != ColorLevel.NONE;
     }
 
     @Override
     public void format(LogEvent event, StringBuilder toAppendTo) {
-        if (this.ansi) {
+        if (RenderColorContext.current() != ColorLevel.NONE) {
             Level level = event.getLevel();
             if (level.isMoreSpecificThan(Level.ERROR)) {
                 format(ANSI_ERROR, event, toAppendTo);

@@ -1,30 +1,30 @@
 package xyz.jpenilla.endermux.server.log4j;
 
-import java.util.Arrays;
+import java.io.Serializable;
 import java.util.concurrent.atomic.AtomicLong;
+import net.kyori.ansi.ColorLevel;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.Layout;
 import org.apache.logging.log4j.core.LogEvent;
 import org.jspecify.annotations.NullMarked;
-import org.jspecify.annotations.Nullable;
-import xyz.jpenilla.endermux.protocol.Payloads;
+import xyz.jpenilla.endermux.log4j.RenderColorContext;
 import xyz.jpenilla.endermux.server.EndermuxServer;
 
 @NullMarked
 public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogForwardingTarget {
-
-  public static final String COMPONENT_LOG_MESSAGE_KEY = "component_log_message";
-
   private static final Logger LOGGER = LogManager.getLogger();
 
   private static final long ERROR_LOG_INTERVAL_MS = 60_000;
 
   private final EndermuxServer endermuxServer;
+  private final Layout<? extends Serializable> renderedLogLayout;
   private final AtomicLong failureCount = new AtomicLong(0);
   private volatile long lastErrorLogTime = 0;
 
-  public RemoteLogForwarder(final EndermuxServer endermuxServer) {
+  public RemoteLogForwarder(final EndermuxServer endermuxServer, final Layout<? extends Serializable> renderedLogLayout) {
     this.endermuxServer = endermuxServer;
+    this.renderedLogLayout = renderedLogLayout;
   }
 
   @Override
@@ -35,22 +35,16 @@ public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogF
     }
 
     try {
-      final String rawMessage = event.getMessage().getFormattedMessage();
-
-      final Payloads.LogForward logPayload = new Payloads.LogForward(
-        event.getLoggerName(),
-        event.getLevel().toString(),
-        rawMessage,
-        event.getContextData().getValue(COMPONENT_LOG_MESSAGE_KEY),
-        throwableInfo(event),
-        event.getTimeMillis(),
-        event.getThreadName()
-      );
-
-      manager.broadcastLog(logPayload);
-
+      final LogEvent immutable = event.toImmutable();
+      manager.broadcastLog(colorLevel -> this.render(immutable, colorLevel));
     } catch (final Exception e) {
       this.handleForwardingError(e);
+    }
+  }
+
+  private String render(final LogEvent event, final ColorLevel colorLevel) {
+    try (final RenderColorContext.Scope _ = RenderColorContext.push(colorLevel)) {
+      return this.renderedLogLayout.toSerializable(event).toString();
     }
   }
 
@@ -67,41 +61,6 @@ public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogF
         e
       );
     }
-  }
-
-  private static Payloads.@Nullable ThrowableInfo throwableInfo(final LogEvent event) {
-    final Throwable thrown = event.getThrown();
-    return thrown != null ? toThrowableInfo(thrown) : null;
-  }
-
-  private static Payloads.ThrowableInfo toThrowableInfo(final Throwable throwable) {
-    final StackTraceElement[] stackTrace = throwable.getStackTrace();
-    final Payloads.StackFrame[] frames = new Payloads.StackFrame[stackTrace.length];
-    for (int i = 0; i < stackTrace.length; i++) {
-      final StackTraceElement element = stackTrace[i];
-      frames[i] = new Payloads.StackFrame(
-        element.getClassName(),
-        element.getMethodName(),
-        element.getFileName(),
-        element.getLineNumber(),
-        element.getClassLoaderName(),
-        element.getModuleName(),
-        element.getModuleVersion(),
-        null
-      );
-    }
-    final Throwable[] suppressed = throwable.getSuppressed();
-    final Payloads.ThrowableInfo[] suppressedInfo = new Payloads.ThrowableInfo[suppressed.length];
-    for (int i = 0; i < suppressed.length; i++) {
-      suppressedInfo[i] = toThrowableInfo(suppressed[i]);
-    }
-    return new Payloads.ThrowableInfo(
-      throwable.getClass().getName(),
-      throwable.getMessage(),
-      Arrays.asList(frames),
-      throwable.getCause() == null ? null : toThrowableInfo(throwable.getCause()),
-      Arrays.asList(suppressedInfo)
-    );
   }
 
 }

@@ -1,6 +1,7 @@
 package xyz.jpenilla.endermux.server;
 
 import java.util.function.Consumer;
+import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
@@ -21,6 +22,7 @@ public final class ClientSession implements Consumer<Message<?>> {
   private final HandlerRegistry handlerRegistry;
   private volatile boolean logReady = false;
   private volatile boolean interactivityAvailable;
+  private volatile ColorLevel colorLevel = ColorLevel.NONE;
 
   public ClientSession(
     final ClientEndpoint connection,
@@ -81,6 +83,14 @@ public final class ClientSession implements Consumer<Message<?>> {
 
   public boolean isLogReady() {
     return this.logReady;
+  }
+
+  public ColorLevel colorLevel() {
+    return this.colorLevel;
+  }
+
+  void setColorLevel(final ColorLevel colorLevel) {
+    this.colorLevel = colorLevel;
   }
 
   void setInteractivityAvailable(final boolean available) {

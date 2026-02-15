@@ -8,7 +8,7 @@ public final class SocketProtocolConstants {
   private SocketProtocolConstants() {
   }
 
-  public static final int PROTOCOL_VERSION = 10;
+  public static final int PROTOCOL_VERSION = 11;
 
   public static final int MAX_FRAME_SIZE_BYTES = 1024 * 1024;
 

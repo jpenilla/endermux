@@ -117,10 +117,11 @@ public final class HexFormattingConverter extends LogEventPatternConverter {
             return;
         }
 
-        boolean useAnsi = ansi && ColorLevel.compute() != ColorLevel.NONE;
+        final ColorLevel colorLevel = RenderColorContext.current();
+        boolean useAnsi = ansi && colorLevel != ColorLevel.NONE;
         String content = toAppendTo.substring(start);
         content = useAnsi ? convertRGBColors(content) : stripRGBColors(content);
-        format(content, toAppendTo, start, useAnsi);
+        format(content, toAppendTo, start, useAnsi, colorLevel);
     }
 
     private static String convertRGBColors(final String input) {
@@ -141,7 +142,7 @@ public final class HexFormattingConverter extends LogEventPatternConverter {
         return RGB_PATTERN.matcher(input).replaceAll("");
     }
 
-    static void format(String content, StringBuilder result, int start, boolean ansi) {
+    static void format(String content, StringBuilder result, int start, boolean ansi, ColorLevel colorLevel) {
         int next = content.indexOf(COLOR_CHAR);
         int last = content.length() - 1;
         if (next == -1 || next == last) {
@@ -155,7 +156,7 @@ public final class HexFormattingConverter extends LogEventPatternConverter {
 
         Matcher matcher = NAMED_PATTERN.matcher(content);
         StringBuilder buffer = new StringBuilder();
-        final String[] ansiCodes = ansiCodes();
+        final String[] ansiCodes = ansiCodes(colorLevel);
         while (matcher.find()) {
             int format = LOOKUP.indexOf(Character.toLowerCase(matcher.group().charAt(1)));
             if (format != -1) {
@@ -171,8 +172,8 @@ public final class HexFormattingConverter extends LogEventPatternConverter {
         }
     }
 
-    private static String[] ansiCodes() {
-        final boolean rgb = ColorLevel.compute() == ColorLevel.TRUE_COLOR;
+    private static String[] ansiCodes(final ColorLevel colorLevel) {
+        final boolean rgb = colorLevel == ColorLevel.TRUE_COLOR;
         return rgb ? RGB_ANSI_CODES : ANSI_ANSI_CODES;
     }
 

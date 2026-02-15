@@ -13,11 +13,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
 import java.util.UUID;
+import net.kyori.ansi.ColorLevel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
-import xyz.jpenilla.endermux.protocol.LayoutConfig;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
@@ -54,7 +54,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         requestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION)
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
       ));
 
       final Message<?> welcome = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -79,7 +79,7 @@ class EndermuxServerIntegrationTest {
     try (TestClient client = TestClient.connect(socket)) {
       client.send(Message.unsolicited(
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION)
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
       ));
 
       final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -118,7 +118,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         requestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION + 1)
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION + 1, ColorLevel.INDEXED_16)
       ));
 
       final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -141,7 +141,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         helloRequestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION)
+        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
       ));
       assertEquals(MessageType.WELCOME, client.readMessageWithTimeout(Duration.ofSeconds(2)).type());
       final Message<?> initialStatus = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -186,29 +186,19 @@ class EndermuxServerIntegrationTest {
       assertEquals(MessageType.PONG, pong.type());
       assertEquals(pingRequestId, pong.requestId());
 
-      this.server.broadcastLog(new Payloads.LogForward(
-        "test.logger",
-        "INFO",
-        "hello from server",
-        null,
-        null,
-        123L,
-        "Server thread"
-      ));
+      this.server.broadcastLog(level -> "hello from server");
 
       final Message<?> forwarded = client.readMessageWithTimeout(Duration.ofSeconds(2));
       assertNotNull(forwarded);
       assertEquals(MessageType.LOG_FORWARD, forwarded.type());
       final Payloads.LogForward payload = (Payloads.LogForward) forwarded.payload();
-      assertEquals("test.logger", payload.logger());
-      assertEquals("hello from server", payload.message());
+      assertEquals("hello from server", payload.rendered());
     }
   }
 
   private Path startServer() throws Exception {
     final Path socket = this.tempDir.resolve("endermux.sock");
     this.server = new EndermuxServer(
-      LayoutConfig.pattern("%msg%n", new LayoutConfig.Flags(true, false, false), "UTF-8"),
       socket,
       4
     );
