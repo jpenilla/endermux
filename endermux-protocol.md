@@ -63,7 +63,7 @@ Handshake constraints:
 
 1. `HELLO` MUST include `requestId`.
 2. `HELLO` MUST be the first message.
-3. Handshake timeout is `2000ms` with `100ms` join grace.
+3. Handshake timeout is `2000ms` with `1000ms` join grace.
 4. Timeout or transport failure closes the connection; timeout `REJECT` delivery is not guaranteed.
 
 ## 6. Message Catalog
@@ -228,9 +228,9 @@ Handshake constraints:
 | Constant | Value |
 |---|---|
 | Handshake timeout | `2000ms` |
-| Handshake timeout join grace | `100ms` |
+| Handshake timeout join grace | `1000ms` |
 | Completion timeout | `5000ms` |
-| Syntax highlight timeout | `200ms` |
+| Syntax highlight timeout | `1000ms` |
 | Max frame size | `1 MiB` |
 
 ## 12. Compatibility Policy

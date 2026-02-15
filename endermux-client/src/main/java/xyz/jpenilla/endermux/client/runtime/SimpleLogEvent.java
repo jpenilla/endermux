@@ -40,7 +40,6 @@ final class SimpleLogEvent implements LogEvent {
     final String message,
     final long timestamp,
     final String threadName,
-    final @Nullable Throwable thrown,
     final Payloads.@Nullable ThrowableInfo throwableInfo
   ) {
     this.loggerName = loggerName;
@@ -48,7 +47,7 @@ final class SimpleLogEvent implements LogEvent {
     this.message = message;
     this.timestamp = timestamp;
     this.threadName = threadName;
-    this.thrown = thrown;
+    this.thrown = ThrowableInfoUtil.toThrowable(throwableInfo);
     this.throwableInfo = throwableInfo;
     this.threadId = Thread.currentThread().getId();
   }

@@ -5,9 +5,6 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.apache.logging.log4j.core.LogEvent;
-import org.apache.logging.log4j.core.impl.ExtendedClassInfo;
-import org.apache.logging.log4j.core.impl.ExtendedStackTraceElement;
-import org.apache.logging.log4j.core.impl.ThrowableProxy;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import xyz.jpenilla.endermux.protocol.Payloads;
@@ -74,11 +71,7 @@ public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogF
 
   private static Payloads.@Nullable ThrowableInfo throwableInfo(final LogEvent event) {
     final Throwable thrown = event.getThrown();
-    if (thrown != null) {
-      return toThrowableInfo(thrown);
-    }
-    final ThrowableProxy proxy = event.getThrownProxy();
-    return proxy == null ? null : toThrowableInfo(proxy);
+    return thrown != null ? toThrowableInfo(thrown) : null;
   }
 
   private static Payloads.ThrowableInfo toThrowableInfo(final Throwable throwable) {
@@ -111,43 +104,4 @@ public final class RemoteLogForwarder implements EndermuxForwardingAppender.LogF
     );
   }
 
-  private static Payloads.ThrowableInfo toThrowableInfo(final ThrowableProxy proxy) {
-    final ExtendedStackTraceElement[] stackTrace = proxy.getExtendedStackTrace();
-    final Payloads.StackFrame[] frames = new Payloads.StackFrame[stackTrace.length];
-    for (int i = 0; i < stackTrace.length; i++) {
-      final ExtendedStackTraceElement extendedElement = stackTrace[i];
-      final StackTraceElement element = extendedElement.getStackTraceElement();
-      final ExtendedClassInfo classInfo = extendedElement.getExtraClassInfo();
-      frames[i] = new Payloads.StackFrame(
-        element.getClassName(),
-        element.getMethodName(),
-        element.getFileName(),
-        element.getLineNumber(),
-        element.getClassLoaderName(),
-        element.getModuleName(),
-        element.getModuleVersion(),
-        classInfo == null ? null : new Payloads.StackFrameClassInfo(
-          classInfo.getExact(),
-          classInfo.getLocation(),
-          classInfo.getVersion()
-        )
-      );
-    }
-    final ThrowableProxy[] suppressed = proxy.getSuppressedProxies();
-    final Payloads.ThrowableInfo[] suppressedInfo = suppressed == null
-      ? new Payloads.ThrowableInfo[0]
-      : new Payloads.ThrowableInfo[suppressed.length];
-    if (suppressed != null) {
-      for (int i = 0; i < suppressed.length; i++) {
-        suppressedInfo[i] = toThrowableInfo(suppressed[i]);
-      }
-    }
-    return new Payloads.ThrowableInfo(
-      proxy.getName(),
-      proxy.getMessage(),
-      Arrays.asList(frames),
-      proxy.getCauseProxy() == null ? null : toThrowableInfo(proxy.getCauseProxy()),
-      Arrays.asList(suppressedInfo)
-    );
-  }
 }

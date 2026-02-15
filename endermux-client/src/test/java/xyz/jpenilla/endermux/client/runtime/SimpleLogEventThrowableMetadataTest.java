@@ -2,8 +2,6 @@ package xyz.jpenilla.endermux.client.runtime;
 
 import java.util.List;
 import org.apache.logging.log4j.Level;
-import org.apache.logging.log4j.core.impl.ExtendedStackTraceElement;
-import org.apache.logging.log4j.core.impl.ThrowableProxy;
 import org.junit.jupiter.api.Test;
 import xyz.jpenilla.endermux.protocol.Payloads;
 
@@ -35,41 +33,20 @@ class SimpleLogEventThrowableMetadataTest {
       List.of(suppressed)
     );
 
-    final Throwable throwable = ThrowableInfoUtil.toThrowable(root);
-    assertNotNull(throwable);
-    assertEquals("root-loader", throwable.getStackTrace()[0].getClassLoaderName());
-    assertEquals("root.mod", throwable.getStackTrace()[0].getModuleName());
-    assertEquals("1.0.0", throwable.getStackTrace()[0].getModuleVersion());
-
     final SimpleLogEvent event = new SimpleLogEvent(
       "test.logger",
       Level.ERROR,
       "boom",
       123L,
       "Server thread",
-      throwable,
       root
     );
 
-    final ThrowableProxy proxy = event.getThrownProxy();
-    assertNotNull(proxy);
-    assertClassInfo(proxy.getExtendedStackTrace(), "root-location", "1.0.0");
-    assertNotNull(proxy.getCauseProxy());
-    assertClassInfo(proxy.getCauseProxy().getExtendedStackTrace(), "cause-location", "2.0.0");
-    assertNotNull(proxy.getSuppressedProxies());
-    assertEquals(1, proxy.getSuppressedProxies().length);
-    assertClassInfo(proxy.getSuppressedProxies()[0].getExtendedStackTrace(), "supp-location", "3.0.0");
-  }
-
-  private static void assertClassInfo(
-    final ExtendedStackTraceElement[] stackTrace,
-    final String expectedLocation,
-    final String expectedVersion
-  ) {
-    assertNotNull(stackTrace);
-    assertEquals(1, stackTrace.length);
-    assertEquals(expectedLocation, stackTrace[0].getExtraClassInfo().getLocation());
-    assertEquals(expectedVersion, stackTrace[0].getExtraClassInfo().getVersion());
+    final Throwable throwable = event.getThrown();
+    assertNotNull(throwable);
+    assertEquals("root-loader", throwable.getStackTrace()[0].getClassLoaderName());
+    assertEquals("root.mod", throwable.getStackTrace()[0].getModuleName());
+    assertEquals("1.0.0", throwable.getStackTrace()[0].getModuleVersion());
   }
 
   private static Payloads.ThrowableInfo throwableInfo(
