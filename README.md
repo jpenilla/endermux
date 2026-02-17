@@ -33,10 +33,30 @@ If there is serious interest in supporting other transport (i.e., TCP), it's som
 
 ## Usage (Client)
 
+### Get Started
+
 - Download the latest client distribution from GitHub Actions.
-- Extract the archive
-- `cd` into the extracted directory
-- Run `./bin/endermux-client --help` or `.\bin\endermux-client.bat --help` on Windows with a Java 25+ `JAVA_HOME`
+- Extract the archive.
+- `cd` into the extracted directory.
+- Have `JAVA_HOME` set to a Java 25+ installation.
+- Run `./bin/endermux-client --help` or `.\bin\endermux-client.bat --help` on Windows to see available options.
+
+### Behavior
+
+1) If the socket does not exist yet, the client will use file watching (falling back to polling if necessary) to wait for it to appear.
+2) Once the socket exists, the client will attempt to connect to it.
+3) If the connection fails, the client will retry indefinitely with a backoff delay.
+4) On successful connection, the client attaches to the remote console session.
+5) On lost connection (graceful or otherwise), the client will restart at step 1.
+
+### Controls
+
+When connected:
+- `Ctrl+C` - clears the current command buffer and prints an informational message
+- `Ctrl+D` - disconnects from the remote console session and exits the client
+
+When disconnected (i.e., waiting for socket or reconnection backoff):
+- `Ctrl+C` - exits the client
 
 ## Building
 

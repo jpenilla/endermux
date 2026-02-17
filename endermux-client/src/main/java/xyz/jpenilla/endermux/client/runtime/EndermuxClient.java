@@ -208,16 +208,23 @@ public final class EndermuxClient {
       return true;
     }
     LOGGER.info("Reconnecting in {}...", formatBackoff(backoffMs));
-    try {
-      Thread.sleep(backoffMs);
-      return true;
-    } catch (final InterruptedException e) {
-      if (this.shutdownRequested) {
-        return false;
+    final long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(backoffMs);
+    while (!this.shutdownRequested) {
+      final long remainingNanos = deadlineNanos - System.nanoTime();
+      if (remainingNanos <= 0L) {
+        return true;
       }
-      LOGGER.debug("Interrupted while sleeping for reconnect backoff", e);
-      return true;
+      final long sleepMs = Math.min(200L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
+      try {
+        Thread.sleep(Math.max(1L, sleepMs));
+      } catch (final InterruptedException e) {
+        if (this.shutdownRequested) {
+          return false;
+        }
+        LOGGER.debug("Interrupted while sleeping for reconnect backoff", e);
+      }
     }
+    return false;
   }
 
   private long retryBackoffMs(final int attempt) {

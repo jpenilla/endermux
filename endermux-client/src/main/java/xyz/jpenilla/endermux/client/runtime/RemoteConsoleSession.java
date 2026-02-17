@@ -36,10 +36,10 @@ final class RemoteConsoleSession {
   private final TerminalRuntimeContext terminalContext;
   private final ExecutorService logExecutor;
   private final BooleanSupplier shutdownRequested;
-  private final Object interactivityLock = new Object();
 
   private volatile @Nullable SocketTransport socketClient;
   private volatile boolean interactiveAvailable;
+  private volatile boolean suppressNextInterruptHint;
   private @Nullable LineReader lineReader;
 
   RemoteConsoleSession(
@@ -105,9 +105,6 @@ final class RemoteConsoleSession {
 
   private void onDisconnect() {
     this.terminalContext.interruptActiveReader(this.lineReader);
-    synchronized (this.interactivityLock) {
-      this.interactivityLock.notifyAll();
-    }
   }
 
   private void cleanup() {
@@ -118,9 +115,6 @@ final class RemoteConsoleSession {
     this.socketClient = null;
     this.lineReader = null;
     TerminalOutput.setLineReader(null);
-    synchronized (this.interactivityLock) {
-      this.interactivityLock.notifyAll();
-    }
   }
 
   private boolean acceptInput() {
@@ -142,20 +136,19 @@ final class RemoteConsoleSession {
           return false;
         }
 
-        if (!this.interactiveAvailable) {
-          if (!this.waitForInteractivity()) {
-            return false;
-          }
-          continue;
-        }
-
-        final String input = sessionReader.readLine(TERMINAL_PROMPT);
+        this.updateReaderMode(sessionReader);
+        final String prompt = this.interactiveAvailable ? TERMINAL_PROMPT : "";
+        final String input = sessionReader.readLine(prompt);
         if (input == null) {
           return this.userRequestedDisconnect();
         }
 
         final String trimmedInput = input.trim();
         if (trimmedInput.isEmpty()) {
+          continue;
+        }
+        if (!this.interactiveAvailable) {
+          LOGGER.debug("Ignoring input while interactivity is unavailable");
           continue;
         }
         this.sendCommand(client, trimmedInput);
@@ -166,7 +159,7 @@ final class RemoteConsoleSession {
           Thread.interrupted();
           return false;
         }
-        if (!this.interactiveAvailable) {
+        if (this.consumeSuppressedInterruptHint()) {
           continue;
         }
         this.printDisconnectHint();
@@ -187,13 +180,6 @@ final class RemoteConsoleSession {
       final SocketTransport client = this.connectedClient();
       if (client == null) {
         return false;
-      }
-
-      if (!this.interactiveAvailable) {
-        if (!this.waitForInteractivity()) {
-          return false;
-        }
-        continue;
       }
 
       final String input;
@@ -218,6 +204,10 @@ final class RemoteConsoleSession {
 
       final String trimmedInput = input.trim();
       if (trimmedInput.isEmpty()) {
+        continue;
+      }
+      if (!this.interactiveAvailable) {
+        LOGGER.debug("Ignoring input while interactivity is unavailable");
         continue;
       }
       this.sendCommand(client, trimmedInput);
@@ -249,21 +239,6 @@ final class RemoteConsoleSession {
     }
   }
 
-  private boolean waitForInteractivity() {
-    synchronized (this.interactivityLock) {
-      try {
-        this.interactivityLock.wait(SOCKET_POLL_INTERVAL_MS);
-        return !this.shutdownRequested.getAsBoolean();
-      } catch (final InterruptedException e) {
-        if (this.shutdownRequested.getAsBoolean()) {
-          return false;
-        }
-        LOGGER.debug("Interrupted while waiting for interactivity update", e);
-        return true;
-      }
-    }
-  }
-
   private void handleMessage(final Message<? extends MessagePayload> message) {
     if (this.connectedClient() == null) {
       LOGGER.warn("Not connected to server");
@@ -283,13 +258,28 @@ final class RemoteConsoleSession {
 
     if (type == MessageType.INTERACTIVITY_STATUS
       && message.payload() instanceof Payloads.InteractivityStatus(boolean available)) {
+      final boolean changed = this.interactiveAvailable != available;
       this.interactiveAvailable = available;
-      if (!available) {
+      if (changed) {
+        this.suppressNextInterruptHint = true;
         this.terminalContext.interruptActiveReader(this.lineReader);
       }
-      synchronized (this.interactivityLock) {
-        this.interactivityLock.notifyAll();
-      }
+    }
+  }
+
+  private boolean consumeSuppressedInterruptHint() {
+    if (!this.suppressNextInterruptHint) {
+      return false;
+    }
+    this.suppressNextInterruptHint = false;
+    return true;
+  }
+
+  private void updateReaderMode(final LineReader sessionReader) {
+    if (this.interactiveAvailable) {
+      sessionReader.unsetOpt(LineReader.Option.ERASE_LINE_ON_FINISH);
+    } else {
+      sessionReader.setOpt(LineReader.Option.ERASE_LINE_ON_FINISH);
     }
   }
 
