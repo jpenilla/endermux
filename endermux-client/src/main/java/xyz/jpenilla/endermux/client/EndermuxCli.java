@@ -51,6 +51,13 @@ public final class EndermuxCli implements Callable<Integer> {
   )
   private boolean debug;
 
+  @Option(
+    names = "--ignore-unrecoverable-handshake",
+    defaultValue = "false",
+    description = "Keep retrying even when handshake fails with an unrecoverable protocol error."
+  )
+  private boolean ignoreUnrecoverableHandshake;
+
   static void main(final String[] args) {
     final int exitCode = new CommandLine(new EndermuxCli()).execute(args);
     System.exit(exitCode);
@@ -60,7 +67,7 @@ public final class EndermuxCli implements Callable<Integer> {
   public Integer call() {
     this.configureLogging();
     try {
-      return new EndermuxClient().run(this.socketPath);
+      return new EndermuxClient().run(this.socketPath, this.ignoreUnrecoverableHandshake);
     } catch (final Exception e) {
       LOGGER.error("Error starting Endermux client", e);
       return 1;

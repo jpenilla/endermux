@@ -31,7 +31,7 @@ public final class EndermuxClient {
   private @Nullable TerminalRuntimeContext terminalContext;
   private volatile @Nullable RemoteConsoleSession activeSession;
 
-  public int run(final String socketPath) {
+  public int run(final String socketPath, final boolean ignoreUnrecoverableHandshake) {
     this.terminalContext = TerminalRuntimeContext.create();
 
     LOGGER.info(EndermuxCli.VERSION_MESSAGE);
@@ -56,13 +56,21 @@ public final class EndermuxClient {
         final RemoteConsoleSession.SessionOutcome sessionOutcome = this.runSession(socketPath);
         switch (sessionOutcome.disconnectReason()) {
           case USER_EOF -> this.exitReason = ExitReason.USER_EOF;
-          case UNRECOVERABLE_HANDSHAKE_FAILURE -> this.exitReason = ExitReason.UNRECOVERABLE_HANDSHAKE_FAILURE;
+          case UNRECOVERABLE_HANDSHAKE_FAILURE -> {
+            if (!ignoreUnrecoverableHandshake) {
+              this.exitReason = ExitReason.UNRECOVERABLE_HANDSHAKE_FAILURE;
+            }
+          }
         }
         if (sessionOutcome.didConnect()) {
           LOGGER.info(text("Disconnected from server.", NamedTextColor.RED, TextDecoration.BOLD));
           retryCount = 0;
         }
-        if (sessionOutcome.quitClient()) {
+        if (sessionOutcome.disconnectReason() == RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
+          && ignoreUnrecoverableHandshake) {
+          LOGGER.warn("Retrying despite unrecoverable handshake failure because --ignore-unrecoverable-handshake is enabled.");
+        }
+        if (shouldQuitClient(sessionOutcome, ignoreUnrecoverableHandshake)) {
           break;
         }
 
@@ -90,6 +98,17 @@ public final class EndermuxClient {
       LOGGER.info("Goodbye!");
     }
     return exitReason == null ? 0 : exitReason.exitCode();
+  }
+
+  static boolean shouldQuitClient(
+    final RemoteConsoleSession.SessionOutcome sessionOutcome,
+    final boolean ignoreUnrecoverableHandshake
+  ) {
+    if (sessionOutcome.disconnectReason() == RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
+      && ignoreUnrecoverableHandshake) {
+      return false;
+    }
+    return sessionOutcome.quitClient();
   }
 
   private RemoteConsoleSession.SessionOutcome runSession(final String socketPath) {

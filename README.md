@@ -47,6 +47,7 @@ If there is serious interest in supporting other transport (i.e., TCP), it's som
 2) Once the socket exists, the client will attempt to connect to it.
 3) If the connection fails for transient reasons (for example I/O errors), the client will retry indefinitely with exponential backoff (capped at 1 minute).
 4) If handshake fails with a fatal reject reason (for example transport epoch mismatch, missing required capabilities, or an unknown reject reason), the client exits immediately without retrying (non-zero exit code).
+   - You can override this with `--ignore-unrecoverable-handshake` to keep retrying anyway.
 5) On successful connection, the client attaches to the remote console session.
 6) On lost connection (graceful or otherwise), the client will restart at step 1.
 
