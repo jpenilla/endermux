@@ -10,7 +10,7 @@ public sealed interface MessagePayload permits
   Payloads.ParseRequest,
   Payloads.CommandExecute,
   Payloads.Ping,
-  Payloads.ClientReady,
+  Payloads.LogSubscribe,
   Payloads.Welcome,
   Payloads.Reject,
   Payloads.CompletionResponse,

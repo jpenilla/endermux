@@ -11,6 +11,8 @@ import java.nio.channels.Channels;
 import java.nio.channels.ClosedChannelException;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
@@ -18,11 +20,11 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
-import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.jpenilla.endermux.protocol.CapabilityVersionRange;
 import xyz.jpenilla.endermux.protocol.ConnectionState;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
 import xyz.jpenilla.endermux.protocol.Message;
@@ -30,6 +32,7 @@ import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 import xyz.jpenilla.endermux.protocol.TimedRead;
 
@@ -37,6 +40,8 @@ import xyz.jpenilla.endermux.protocol.TimedRead;
 public final class SocketTransport {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(SocketTransport.class);
+  private static final Map<String, CapabilityVersionRange> SUPPORTED_CAPABILITIES = ProtocolCapabilities.clientSupportedCapabilities();
+  private static final Set<String> REQUIRED_CAPABILITIES = ProtocolCapabilities.clientRequiredCapabilities();
 
   private final String socketPath;
   private final MessageSerializer serializer;
@@ -52,6 +57,7 @@ public final class SocketTransport {
   private volatile @Nullable TransportMessageHandler messageHandler;
   private volatile @Nullable Runnable disconnectCallback;
   private volatile boolean interactivityAvailable;
+  private volatile Map<String, Integer> negotiatedCapabilities = Map.of();
 
   public SocketTransport(final String socketPath) {
     this.socketPath = socketPath;
@@ -59,7 +65,7 @@ public final class SocketTransport {
     this.delaySimulator = TransportDelaySimulator.fromSystemProperties(LOGGER);
   }
 
-  public void connect() throws IOException, ProtocolMismatchException {
+  public void connect() throws IOException, HandshakeFatalException {
     if (!this.state.compareAndSet(ConnectionState.DISCONNECTED, ConnectionState.CONNECTING)) {
       throw new IllegalStateException("Cannot connect: current state is " + this.state.get());
     }
@@ -86,7 +92,7 @@ public final class SocketTransport {
       final Thread receiverThread = new Thread(this::receiveMessages, "SocketTransport-Receiver");
       receiverThread.setDaemon(true);
       receiverThread.start();
-    } catch (final IOException | ProtocolMismatchException e) {
+    } catch (final IOException | HandshakeFatalException e) {
       this.closeResources();
       this.state.set(ConnectionState.DISCONNECTED);
       throw e;
@@ -112,6 +118,11 @@ public final class SocketTransport {
   }
 
   public boolean sendMessage(final Message<?> message) {
+    final @Nullable String requiredCapability = message.type().capability();
+    if (requiredCapability != null && !this.supportsCapability(requiredCapability)) {
+      return false;
+    }
+
     if (this.writer != null && this.isConnected()) {
       try {
         if (this.delaySimulator.enabled()) {
@@ -132,7 +143,12 @@ public final class SocketTransport {
     final MessageType expectedResponseType,
     final long timeoutMs
   ) throws IOException, InterruptedException {
-    if (requiresInteractivity(message.type()) && !this.interactivityAvailable) {
+    final @Nullable String requiredCapability = message.type().capability();
+    if (requiredCapability != null && !this.supportsCapability(requiredCapability)) {
+      throw new IOException("Capability not negotiated: " + requiredCapability);
+    }
+
+    if (message.type().requiresInteractivity() && !this.interactivityAvailable) {
       throw new IOException("Interactivity is currently unavailable");
     }
 
@@ -231,10 +247,16 @@ public final class SocketTransport {
     return this.interactivityAvailable;
   }
 
-  private void performHandshake() throws IOException, ProtocolMismatchException {
-    final Payloads.Hello hello = new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.compute());
+  public boolean supportsCapability(final String capability) {
+    return this.negotiatedCapabilities.containsKey(capability);
+  }
+
+  private void performHandshake() throws IOException, HandshakeFatalException {
+    final ClientHandshakeHandler handshake = new ClientHandshakeHandler(SUPPORTED_CAPABILITIES, REQUIRED_CAPABILITIES);
+    final Payloads.Hello hello = handshake.createHelloPayload();
+    final String helloRequestId = UUID.randomUUID().toString();
     final Message<Payloads.Hello> helloMessage = Message.<Payloads.Hello>builder(MessageType.HELLO)
-      .requestId(UUID.randomUUID())
+      .requestId(helloRequestId)
       .payload(hello)
       .build();
     this.writeMessageNow(helloMessage);
@@ -244,28 +266,7 @@ public final class SocketTransport {
       throw new IOException("Handshake timeout");
     }
 
-    if (response.type() == MessageType.REJECT && response.payload() instanceof Payloads.Reject(String reason, int expectedVersion)) {
-      if (expectedVersion != SocketProtocolConstants.PROTOCOL_VERSION) {
-        throw new ProtocolMismatchException(
-          "Handshake rejected: " + reason,
-          expectedVersion,
-          SocketProtocolConstants.PROTOCOL_VERSION
-        );
-      }
-      throw new IOException("Handshake rejected: " + reason + " (expected version " + expectedVersion + ")");
-    }
-
-    if (response.type() != MessageType.WELCOME || !(response.payload() instanceof Payloads.Welcome welcome)) {
-      throw new IOException("Invalid handshake response: " + response.type());
-    }
-
-    if (welcome.protocolVersion() != SocketProtocolConstants.PROTOCOL_VERSION) {
-      throw new ProtocolMismatchException(
-        "Unsupported protocol version: " + welcome.protocolVersion(),
-        welcome.protocolVersion(),
-        SocketProtocolConstants.PROTOCOL_VERSION
-      );
-    }
+    this.negotiatedCapabilities = handshake.handleHandshakeResponse(helloRequestId, response);
   }
 
   private @Nullable Message<?> readMessageWithTimeout(final long timeoutMs) throws IOException {
@@ -383,14 +384,8 @@ public final class SocketTransport {
       }
       this.socketChannel = null;
     }
+    this.negotiatedCapabilities = Map.of();
     this.interactivityAvailable = false;
-  }
-
-  private static boolean requiresInteractivity(final MessageType type) {
-    return switch (type) {
-      case COMPLETION_REQUEST, SYNTAX_HIGHLIGHT_REQUEST, PARSE_REQUEST, COMMAND_EXECUTE -> true;
-      default -> false;
-    };
   }
 
   private boolean shouldLogReadError(final IOException error) {

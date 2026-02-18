@@ -12,18 +12,24 @@ import java.nio.channels.SocketChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import net.kyori.ansi.ColorLevel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import xyz.jpenilla.endermux.ansi.ColorLevelContext;
+import xyz.jpenilla.endermux.protocol.CapabilityVersionRange;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
+import xyz.jpenilla.endermux.protocol.HandshakeRejectReasons;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 import xyz.jpenilla.endermux.protocol.TimedRead;
 import xyz.jpenilla.endermux.server.api.InteractiveConsoleHooks;
@@ -56,7 +62,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         requestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
+        hello(ColorLevel.INDEXED_16)
       ));
 
       final Message<?> welcome = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -64,7 +70,8 @@ class EndermuxServerIntegrationTest {
       assertEquals(MessageType.WELCOME, welcome.type());
       assertEquals(requestId, welcome.requestId());
       final Payloads.Welcome welcomePayload = (Payloads.Welcome) welcome.payload();
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION, welcomePayload.protocolVersion());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, welcomePayload.transportEpoch());
+      assertEquals(ProtocolCapabilities.V1, welcomePayload.selectedCapabilities().get(ProtocolCapabilities.COMMAND_EXECUTE));
 
       final Message<?> status = client.readMessageWithTimeout(Duration.ofSeconds(2));
       assertNotNull(status);
@@ -81,7 +88,7 @@ class EndermuxServerIntegrationTest {
     try (TestClient client = TestClient.connect(socket)) {
       client.send(Message.unsolicited(
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
+        hello(ColorLevel.INDEXED_16)
       ));
 
       final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -90,8 +97,9 @@ class EndermuxServerIntegrationTest {
       assertNull(reject.requestId());
 
       final Payloads.Reject payload = (Payloads.Reject) reject.payload();
-      assertEquals("Missing requestId", payload.reason());
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION, payload.expectedVersion());
+      assertEquals(HandshakeRejectReasons.MISSING_REQUEST_ID, payload.reason());
+      assertEquals("Missing requestId", payload.message());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.expectedTransportEpoch());
     }
   }
 
@@ -107,12 +115,14 @@ class EndermuxServerIntegrationTest {
       assertNotNull(reject);
       assertEquals(MessageType.REJECT, reject.type());
       assertEquals(requestId, reject.requestId());
-      assertEquals("Expected HELLO", ((Payloads.Reject) reject.payload()).reason());
+      final Payloads.Reject payload = (Payloads.Reject) reject.payload();
+      assertEquals(HandshakeRejectReasons.EXPECTED_HELLO, payload.reason());
+      assertEquals("Expected HELLO", payload.message());
     }
   }
 
   @Test
-  void handshakeRejectsUnsupportedProtocolVersion() throws Exception {
+  void handshakeRejectsUnsupportedTransportEpoch() throws Exception {
     final Path socket = this.startServer();
 
     try (TestClient client = TestClient.connect(socket)) {
@@ -120,7 +130,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         requestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION + 1, ColorLevel.INDEXED_16)
+        helloWithTransportEpoch(SocketProtocolConstants.TRANSPORT_EPOCH + 1, ColorLevel.INDEXED_16)
       ));
 
       final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -129,13 +139,47 @@ class EndermuxServerIntegrationTest {
       assertEquals(requestId, reject.requestId());
 
       final Payloads.Reject payload = (Payloads.Reject) reject.payload();
-      assertEquals("Unsupported protocol version", payload.reason());
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION, payload.expectedVersion());
+      assertEquals(HandshakeRejectReasons.UNSUPPORTED_TRANSPORT_EPOCH, payload.reason());
+      assertEquals("Unsupported transport epoch", payload.message());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.expectedTransportEpoch());
     }
   }
 
   @Test
-  void interactivityAndClientReadyFlow() throws Exception {
+  void handshakeRejectsMissingRequiredCapability() throws Exception {
+    final Path socket = this.startServer();
+
+    try (TestClient client = TestClient.connect(socket)) {
+      final String requestId = UUID.randomUUID().toString();
+      final Map<String, CapabilityVersionRange> supportedCapabilities = new HashMap<>(
+        ProtocolCapabilities.clientSupportedCapabilities()
+      );
+      supportedCapabilities.remove(ProtocolCapabilities.INTERACTIVITY_STATUS);
+      client.send(Message.response(
+        requestId,
+        MessageType.HELLO,
+        new Payloads.Hello(
+          SocketProtocolConstants.TRANSPORT_EPOCH,
+          ColorLevel.INDEXED_16,
+          supportedCapabilities,
+          Set.of(ProtocolCapabilities.INTERACTIVITY_STATUS)
+        )
+      ));
+
+      final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(reject);
+      assertEquals(MessageType.REJECT, reject.type());
+      assertEquals(requestId, reject.requestId());
+
+      final Payloads.Reject payload = (Payloads.Reject) reject.payload();
+      assertEquals(HandshakeRejectReasons.MISSING_REQUIRED_CAPABILITIES, payload.reason());
+      assertEquals("Missing required capabilities", payload.message());
+      assertTrue(payload.missingRequiredCapabilities().contains(ProtocolCapabilities.INTERACTIVITY_STATUS));
+    }
+  }
+
+  @Test
+  void interactivityAndLogSubscribeFlow() throws Exception {
     final Path socket = this.startServer();
 
     try (TestClient client = TestClient.connect(socket)) {
@@ -143,7 +187,7 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         helloRequestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
+        hello(ColorLevel.INDEXED_16)
       ));
       assertEquals(MessageType.WELCOME, client.readMessageWithTimeout(Duration.ofSeconds(2)).type());
       final Message<?> initialStatus = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -180,7 +224,7 @@ class EndermuxServerIntegrationTest {
       assertEquals(completionRequestId2, unsupportedError.requestId());
       assertEquals("Completions are not supported", ((Payloads.Error) unsupportedError.payload()).message());
 
-      client.send(Message.unsolicited(MessageType.CLIENT_READY, new Payloads.ClientReady()));
+      client.send(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
       final String pingRequestId = UUID.randomUUID().toString();
       client.send(Message.response(pingRequestId, MessageType.PING, new Payloads.Ping()));
       final Message<?> pong = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -216,7 +260,7 @@ class EndermuxServerIntegrationTest {
       noneClient.send(Message.response(
         noneHelloRequestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.NONE)
+        hello(ColorLevel.NONE)
       ));
       final Message<?> noneWelcome = noneClient.readMessageWithTimeout(Duration.ofSeconds(2));
       assertNotNull(noneWelcome);
@@ -231,7 +275,7 @@ class EndermuxServerIntegrationTest {
       trueColorClient.send(Message.response(
         trueColorHelloRequestId,
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.TRUE_COLOR)
+        hello(ColorLevel.TRUE_COLOR)
       ));
       final Message<?> trueColorWelcome = trueColorClient.readMessageWithTimeout(Duration.ofSeconds(2));
       assertNotNull(trueColorWelcome);
@@ -287,6 +331,19 @@ class EndermuxServerIntegrationTest {
     }
 
     return socket;
+  }
+
+  private static Payloads.Hello hello(final ColorLevel colorLevel) {
+    return helloWithTransportEpoch(SocketProtocolConstants.TRANSPORT_EPOCH, colorLevel);
+  }
+
+  private static Payloads.Hello helloWithTransportEpoch(final int transportEpoch, final ColorLevel colorLevel) {
+    return new Payloads.Hello(
+      transportEpoch,
+      colorLevel,
+      ProtocolCapabilities.clientSupportedCapabilities(),
+      ProtocolCapabilities.clientRequiredCapabilities()
+    );
   }
 
   private static final class TestClient implements AutoCloseable {

@@ -1,14 +1,5 @@
 package xyz.jpenilla.endermux.client.runtime;
 
-import java.io.IOException;
-import java.nio.file.FileSystems;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.nio.file.StandardWatchEventKinds;
-import java.nio.file.WatchEvent;
-import java.nio.file.WatchKey;
-import java.nio.file.WatchService;
 import java.util.Locale;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,6 +16,8 @@ import static net.kyori.adventure.text.Component.text;
 @NullMarked
 public final class EndermuxClient {
   private static final long SOCKET_POLL_INTERVAL_MS = 500;
+  private static final long INITIAL_RETRY_BACKOFF_MS = 1000L;
+  private static final long MAX_RETRY_BACKOFF_MS = 60_000L;
   private static final ComponentLogger LOGGER = ComponentLogger.logger(EndermuxClient.class);
 
   private final ExecutorService logExecutor = Executors.newSingleThreadExecutor(r -> {
@@ -34,11 +27,11 @@ public final class EndermuxClient {
   });
 
   private volatile boolean shutdownRequested;
-  private @Nullable ExitReason exitReason;
+  private volatile @Nullable ExitReason exitReason;
   private @Nullable TerminalRuntimeContext terminalContext;
   private volatile @Nullable RemoteConsoleSession activeSession;
 
-  public void run(final String socketPath) throws Exception {
+  public int run(final String socketPath) {
     this.terminalContext = TerminalRuntimeContext.create();
 
     LOGGER.info(EndermuxCli.VERSION_MESSAGE);
@@ -46,12 +39,13 @@ public final class EndermuxClient {
     try {
       this.registerSignalHandlers();
       int retryCount = 0;
+      final SocketPathWatcher socketWatcher = new SocketPathWatcher(socketPath, SOCKET_POLL_INTERVAL_MS, LOGGER);
       while (true) {
         if (this.shutdownRequested) {
           break;
         }
 
-        if (!this.waitForSocket(Paths.get(socketPath))) {
+        if (!socketWatcher.waitForSocket(() -> this.shutdownRequested)) {
           break;
         }
 
@@ -60,37 +54,42 @@ public final class EndermuxClient {
         }
 
         final RemoteConsoleSession.SessionOutcome sessionOutcome = this.runSession(socketPath);
-        if (sessionOutcome.disconnectReason() == RemoteConsoleSession.DisconnectReason.USER_EOF) {
-          this.exitReason = ExitReason.USER_EOF;
+        switch (sessionOutcome.disconnectReason()) {
+          case USER_EOF -> this.exitReason = ExitReason.USER_EOF;
+          case UNRECOVERABLE_HANDSHAKE_FAILURE -> this.exitReason = ExitReason.UNRECOVERABLE_HANDSHAKE_FAILURE;
         }
-        if (sessionOutcome.stopClient()) {
-          if (sessionOutcome.connected()) {
-            this.logDisconnectedFromServer();
-          }
-          break;
-        }
-
-        if (sessionOutcome.connected()) {
+        if (sessionOutcome.didConnect()) {
+          LOGGER.info(text("Disconnected from server.", NamedTextColor.RED, TextDecoration.BOLD));
           retryCount = 0;
+        }
+        if (sessionOutcome.quitClient()) {
+          break;
         }
 
         retryCount++;
         final long backoffMs = this.retryBackoffMs(retryCount);
 
-        this.logDisconnectedFromServer();
-        if (!this.waitForBackoff(backoffMs)) {
+        if (backoffMs > 0L && socketWatcher.exists()) {
+          LOGGER.info("Reconnecting in {}...", formatBackoff(backoffMs));
+        }
+        if (!socketWatcher.waitForBackoffOrSocketDisappear(backoffMs, () -> this.shutdownRequested)) {
           break;
         }
       }
     } finally {
       this.shutdown();
-      this.printFarewellIfNeeded();
       final TerminalRuntimeContext context = this.terminalContext;
       if (context != null) {
         context.close();
       }
       this.terminalContext = null;
     }
+
+    final ExitReason exitReason = this.exitReason;
+    if (exitReason == ExitReason.USER_EOF || exitReason == ExitReason.USER_INTERRUPT_WHILE_WAITING) {
+      LOGGER.info("Goodbye!");
+    }
+    return exitReason == null ? 0 : exitReason.exitCode();
   }
 
   private RemoteConsoleSession.SessionOutcome runSession(final String socketPath) {
@@ -126,117 +125,13 @@ public final class EndermuxClient {
     });
   }
 
-  private boolean waitForSocket(final Path socketPath) {
-    final Path resolvedSocketPath = socketPath.toAbsolutePath().normalize();
-    final String displayPath = socketPath.toString();
-    if (Files.exists(resolvedSocketPath)) {
-      return true;
-    }
-
-    final Path parentDir = resolvedSocketPath.getParent();
-    if (parentDir == null || !Files.isDirectory(parentDir)) {
-      throw new IllegalArgumentException("Parent directory does not exist: " +
-        (parentDir != null ? parentDir : resolvedSocketPath));
-    }
-
-    LOGGER.info(text()
-      .content("Waiting for socket to exist: " + displayPath)
-      .decorate(TextDecoration.ITALIC)
-      .build());
-
-    try (WatchService watchService = FileSystems.getDefault().newWatchService()) {
-      parentDir.register(watchService, StandardWatchEventKinds.ENTRY_CREATE);
-
-      if (Files.exists(resolvedSocketPath)) {
-        return true;
-      }
-
-      while (true) {
-        if (this.shutdownRequested) {
-          return false;
-        }
-        final WatchKey key;
-        try {
-          key = watchService.poll(SOCKET_POLL_INTERVAL_MS, TimeUnit.MILLISECONDS);
-        } catch (final InterruptedException e) {
-          if (this.shutdownRequested) {
-            return false;
-          }
-          LOGGER.debug("Interrupted while waiting for the socket to appear", e);
-          continue;
-        }
-        if (key == null) {
-          continue;
-        }
-
-        for (final WatchEvent<?> event : key.pollEvents()) {
-          if (event.kind() == StandardWatchEventKinds.ENTRY_CREATE) {
-            final Path created = parentDir.resolve((Path) event.context());
-            if (created.equals(resolvedSocketPath)) {
-              return true;
-            }
-          }
-        }
-
-        if (!key.reset()) {
-          LOGGER.warn("File watching failed, falling back to polling");
-          break;
-        }
-      }
-    } catch (final IOException e) {
-      LOGGER.warn("File watching unavailable ({}), falling back to polling", e.getMessage());
-    }
-
-    while (!Files.exists(resolvedSocketPath)) {
-      if (this.shutdownRequested) {
-        return false;
-      }
-      try {
-        Thread.sleep(SOCKET_POLL_INTERVAL_MS);
-      } catch (final InterruptedException e) {
-        if (this.shutdownRequested) {
-          return false;
-        }
-        LOGGER.debug("Interrupted while polling for socket availability", e);
-      }
-    }
-    return true;
-  }
-
-  private boolean waitForBackoff(final long backoffMs) {
-    if (backoffMs <= 0) {
-      return true;
-    }
-    LOGGER.info("Reconnecting in {}...", formatBackoff(backoffMs));
-    final long deadlineNanos = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(backoffMs);
-    while (!this.shutdownRequested) {
-      final long remainingNanos = deadlineNanos - System.nanoTime();
-      if (remainingNanos <= 0L) {
-        return true;
-      }
-      final long sleepMs = Math.min(200L, TimeUnit.NANOSECONDS.toMillis(remainingNanos));
-      try {
-        Thread.sleep(Math.max(1L, sleepMs));
-      } catch (final InterruptedException e) {
-        if (this.shutdownRequested) {
-          return false;
-        }
-        LOGGER.debug("Interrupted while sleeping for reconnect backoff", e);
-      }
-    }
-    return false;
-  }
-
   private long retryBackoffMs(final int attempt) {
-    return switch (attempt) {
-      case 1 -> 0L;
-      case 2 -> 500L;
-      case 3 -> 1000L;
-      case 4 -> 2000L;
-      case 5 -> 3000L;
-      case 6 -> 4000L;
-      default -> 5000L;
-    };
+    if (attempt <= 1) {
+      return 0L;
+    }
+    final int shift = Math.min(30, attempt - 2);
+    final long exponentialBackoff = INITIAL_RETRY_BACKOFF_MS << shift;
+    return Math.min(MAX_RETRY_BACKOFF_MS, exponentialBackoff);
   }
 
   private static String formatBackoff(final long backoffMs) {
@@ -264,19 +159,19 @@ public final class EndermuxClient {
     }
   }
 
-  private void printFarewellIfNeeded() {
-    if (this.exitReason == null) {
-      return;
-    }
-    LOGGER.info("Goodbye!");
-  }
-
-  private void logDisconnectedFromServer() {
-    LOGGER.info(text("Disconnected from server.", NamedTextColor.RED, TextDecoration.BOLD));
-  }
-
   private enum ExitReason {
-    USER_EOF,
-    USER_INTERRUPT_WHILE_WAITING
+    USER_EOF(0),
+    USER_INTERRUPT_WHILE_WAITING(0),
+    UNRECOVERABLE_HANDSHAKE_FAILURE(1);
+
+    private final int exitCode;
+
+    ExitReason(int exitCode) {
+      this.exitCode = exitCode;
+    }
+
+    public int exitCode() {
+      return this.exitCode;
+    }
   }
 }

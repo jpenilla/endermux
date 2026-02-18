@@ -3,6 +3,8 @@ package xyz.jpenilla.endermux.protocol;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.kyori.ansi.ColorLevel;
 import org.junit.jupiter.api.Test;
 
@@ -50,16 +52,34 @@ class MessageSerializerTest {
       Message.response(
         "req-hello",
         MessageType.HELLO,
-        new Payloads.Hello(SocketProtocolConstants.PROTOCOL_VERSION, ColorLevel.INDEXED_16)
+        new Payloads.Hello(
+          SocketProtocolConstants.TRANSPORT_EPOCH,
+          ColorLevel.INDEXED_16,
+          ProtocolCapabilities.clientSupportedCapabilities(),
+          ProtocolCapabilities.clientRequiredCapabilities()
+        )
       ),
       Message.response("req-complete", MessageType.COMPLETION_REQUEST, new Payloads.CompletionRequest("say he", 6)),
       Message.response("req-highlight", MessageType.SYNTAX_HIGHLIGHT_REQUEST, new Payloads.SyntaxHighlightRequest("say hi")),
       Message.response("req-parse", MessageType.PARSE_REQUEST, new Payloads.ParseRequest("say hi", 4)),
       Message.unsolicited(MessageType.COMMAND_EXECUTE, new Payloads.CommandExecute("say hi")),
       Message.response("req-ping", MessageType.PING, new Payloads.Ping()),
-      Message.unsolicited(MessageType.CLIENT_READY, new Payloads.ClientReady()),
-      Message.response("req-welcome", MessageType.WELCOME, new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)),
-      Message.response("req-reject", MessageType.REJECT, new Payloads.Reject("Unsupported protocol version", SocketProtocolConstants.PROTOCOL_VERSION)),
+      Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()),
+      Message.response(
+        "req-welcome",
+        MessageType.WELCOME,
+        new Payloads.Welcome(SocketProtocolConstants.TRANSPORT_EPOCH, Map.of(ProtocolCapabilities.COMMAND_EXECUTE, 1))
+      ),
+      Message.response(
+        "req-reject",
+        MessageType.REJECT,
+        new Payloads.Reject(
+          HandshakeRejectReasons.MISSING_REQUIRED_CAPABILITIES,
+          "Missing required capabilities",
+          SocketProtocolConstants.TRANSPORT_EPOCH,
+          Set.of(ProtocolCapabilities.INTERACTIVITY_STATUS)
+        )
+      ),
       Message.response("req-completion-response", MessageType.COMPLETION_RESPONSE, new Payloads.CompletionResponse(
         List.of(
           new Payloads.CompletionResponse.CandidateInfo("help", "help", "show commands"),

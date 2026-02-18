@@ -14,15 +14,19 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
+import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
+import xyz.jpenilla.endermux.protocol.HandshakeRejectReasons;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -37,27 +41,32 @@ class SocketTransportIntegrationTest {
   Path tempDir;
 
   @Test
-  void handshakeRejectWithDifferentExpectedVersionThrowsProtocolMismatch() throws Exception {
+  void handshakeRejectWithDifferentExpectedTransportEpochThrowsProtocolMismatch() throws Exception {
     try (ScriptedServer server = this.startServer(peer -> {
       final Message<?> hello = peer.readMessage();
       final String requestId = assertHello(hello);
       peer.write(Message.response(
         requestId,
         MessageType.REJECT,
-        new Payloads.Reject("Unsupported protocol version", SocketProtocolConstants.PROTOCOL_VERSION + 1)
+        new Payloads.Reject(
+          HandshakeRejectReasons.UNSUPPORTED_TRANSPORT_EPOCH,
+          "Unsupported transport epoch",
+          SocketProtocolConstants.TRANSPORT_EPOCH + 1,
+          Set.of()
+        )
       ));
     })) {
       final SocketTransport transport = new SocketTransport(server.socketPath().toString());
 
       final ProtocolMismatchException ex = assertThrows(ProtocolMismatchException.class, transport::connect);
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION + 1, ex.expectedVersion());
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION, ex.actualVersion());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH + 1, ex.expectedTransportEpoch());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, ex.actualTransportEpoch());
       transport.disconnect();
     }
   }
 
   @Test
-  void handshakeInvalidResponseTypeThrowsIOException() throws Exception {
+  void handshakeInvalidResponseTypeThrowsInvalidHandshakeResponse() throws Exception {
     try (ScriptedServer server = this.startServer(peer -> {
       final Message<?> hello = peer.readMessage();
       final String requestId = assertHello(hello);
@@ -65,28 +74,152 @@ class SocketTransportIntegrationTest {
     })) {
       final SocketTransport transport = new SocketTransport(server.socketPath().toString());
 
-      final IOException ex = assertThrows(IOException.class, transport::connect);
-      assertTrue(ex.getMessage().contains("Invalid handshake response"));
+      final InvalidHandshakeResponseException ex = assertThrows(
+        InvalidHandshakeResponseException.class,
+        transport::connect
+      );
+      assertTrue(ex.getMessage().contains("unexpected response type"));
       transport.disconnect();
     }
   }
 
   @Test
-  void handshakeWelcomeWrongVersionThrowsProtocolMismatch() throws Exception {
+  void handshakeResponseRequestIdMismatchThrowsInvalidHandshakeResponse() throws Exception {
+    try (ScriptedServer server = this.startServer(peer -> {
+      final Message<?> hello = peer.readMessage();
+      assertHello(hello);
+      peer.write(Message.response(
+        UUID.randomUUID().toString(),
+        MessageType.WELCOME,
+        welcomePayload()
+      ));
+    })) {
+      final SocketTransport transport = new SocketTransport(server.socketPath().toString());
+
+      final InvalidHandshakeResponseException ex = assertThrows(
+        InvalidHandshakeResponseException.class,
+        transport::connect
+      );
+      assertTrue(ex.getMessage().contains("requestId mismatch"));
+      transport.disconnect();
+    }
+  }
+
+  @Test
+  void handshakeWelcomeUnsupportedCapabilityVersionThrowsInvalidHandshakeResponse() throws Exception {
     try (ScriptedServer server = this.startServer(peer -> {
       final Message<?> hello = peer.readMessage();
       final String requestId = assertHello(hello);
       peer.write(Message.response(
         requestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION + 1)
+        new Payloads.Welcome(
+          SocketProtocolConstants.TRANSPORT_EPOCH,
+          Map.of(
+            ProtocolCapabilities.COMMAND_EXECUTE, ProtocolCapabilities.V1,
+            ProtocolCapabilities.LOG_FORWARD, ProtocolCapabilities.V1,
+            ProtocolCapabilities.INTERACTIVITY_STATUS, ProtocolCapabilities.V1,
+            ProtocolCapabilities.COMPLETION, 999
+          )
+        )
+      ));
+    })) {
+      final SocketTransport transport = new SocketTransport(server.socketPath().toString());
+
+      final InvalidHandshakeResponseException ex = assertThrows(
+        InvalidHandshakeResponseException.class,
+        transport::connect
+      );
+      assertTrue(ex.getMessage().contains("unsupported version"));
+      transport.disconnect();
+    }
+  }
+
+  @Test
+  void handshakeWelcomeMissingRequiredCapabilityThrowsMissingRequiredCapabilitiesException() throws Exception {
+    try (ScriptedServer server = this.startServer(peer -> {
+      final Message<?> hello = peer.readMessage();
+      final String requestId = assertHello(hello);
+      peer.write(Message.response(
+        requestId,
+        MessageType.WELCOME,
+        new Payloads.Welcome(
+          SocketProtocolConstants.TRANSPORT_EPOCH,
+          Map.of(
+            ProtocolCapabilities.COMMAND_EXECUTE, ProtocolCapabilities.V1,
+            ProtocolCapabilities.LOG_FORWARD, ProtocolCapabilities.V1
+          )
+        )
+      ));
+    })) {
+      final SocketTransport transport = new SocketTransport(server.socketPath().toString());
+
+      final MissingRequiredCapabilitiesException ex = assertThrows(MissingRequiredCapabilitiesException.class, transport::connect);
+      assertTrue(ex.missingRequiredCapabilities().contains(ProtocolCapabilities.INTERACTIVITY_STATUS));
+      transport.disconnect();
+    }
+  }
+
+  @Test
+  void handshakeRejectMissingRequiredCapabilitiesThrowsMissingRequiredCapabilitiesException() throws Exception {
+    try (ScriptedServer server = this.startServer(peer -> {
+      final Message<?> hello = peer.readMessage();
+      final String requestId = assertHello(hello);
+      peer.write(Message.response(
+        requestId,
+        MessageType.REJECT,
+        new Payloads.Reject(
+          HandshakeRejectReasons.MISSING_REQUIRED_CAPABILITIES,
+          "Missing required capabilities",
+          null,
+          Set.of(ProtocolCapabilities.INTERACTIVITY_STATUS)
+        )
+      ));
+    })) {
+      final SocketTransport transport = new SocketTransport(server.socketPath().toString());
+
+      final MissingRequiredCapabilitiesException ex = assertThrows(MissingRequiredCapabilitiesException.class, transport::connect);
+      assertEquals("Missing required capabilities", ex.reason());
+      assertTrue(ex.missingRequiredCapabilities().contains(ProtocolCapabilities.INTERACTIVITY_STATUS));
+      transport.disconnect();
+    }
+  }
+
+  @Test
+  void handshakeRejectUnknownReasonThrowsUnknownRejectReasonException() throws Exception {
+    try (ScriptedServer server = this.startServer(peer -> {
+      final Message<?> hello = peer.readMessage();
+      final String requestId = assertHello(hello);
+      peer.write(Message.response(
+        requestId,
+        MessageType.REJECT,
+        new Payloads.Reject("future_reason", "Future reject reason", null, Set.of())
+      ));
+    })) {
+      final SocketTransport transport = new SocketTransport(server.socketPath().toString());
+
+      final UnknownRejectReasonException ex = assertThrows(UnknownRejectReasonException.class, transport::connect);
+      assertEquals("future_reason", ex.rejectReason());
+      transport.disconnect();
+    }
+  }
+
+  @Test
+  void handshakeWelcomeWrongTransportEpochThrowsProtocolMismatch() throws Exception {
+    try (ScriptedServer server = this.startServer(peer -> {
+      final Message<?> hello = peer.readMessage();
+      final String requestId = assertHello(hello);
+      peer.write(Message.response(
+        requestId,
+        MessageType.WELCOME,
+        new Payloads.Welcome(SocketProtocolConstants.TRANSPORT_EPOCH + 1, selectedCapabilities())
       ));
     })) {
       final SocketTransport transport = new SocketTransport(server.socketPath().toString());
 
       final ProtocolMismatchException ex = assertThrows(ProtocolMismatchException.class, transport::connect);
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION + 1, ex.expectedVersion());
-      assertEquals(SocketProtocolConstants.PROTOCOL_VERSION, ex.actualVersion());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH + 1, ex.expectedTransportEpoch());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, ex.actualTransportEpoch());
       transport.disconnect();
     }
   }
@@ -99,7 +232,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
+        welcomePayload()
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -128,7 +261,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
+        welcomePayload()
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -157,7 +290,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
+        welcomePayload()
       ));
 
       final Message<?> ping = peer.readMessage();
@@ -186,7 +319,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
+        welcomePayload()
       ));
       Thread.sleep(100L);
     })) {
@@ -217,7 +350,7 @@ class SocketTransportIntegrationTest {
       peer.write(Message.response(
         helloRequestId,
         MessageType.WELCOME,
-        new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION)
+        welcomePayload()
       ));
       peer.write(Message.unsolicited(MessageType.INTERACTIVITY_STATUS, new Payloads.InteractivityStatus(true)));
       Thread.sleep(100L);
@@ -251,9 +384,28 @@ class SocketTransportIntegrationTest {
     assertEquals(MessageType.HELLO, hello.type());
     assertInstanceOf(Payloads.Hello.class, hello.payload());
     final Payloads.Hello payload = (Payloads.Hello) hello.payload();
+    assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.transportEpoch());
     assertNotNull(payload.colorLevel());
+    assertNotNull(payload.capabilities());
+    assertNotNull(payload.requiredCapabilities());
+    assertTrue(payload.requiredCapabilities().contains(ProtocolCapabilities.INTERACTIVITY_STATUS));
     assertNotNull(hello.requestId());
     return hello.requestId();
+  }
+
+  private static Payloads.Welcome welcomePayload() {
+    return new Payloads.Welcome(SocketProtocolConstants.TRANSPORT_EPOCH, selectedCapabilities());
+  }
+
+  private static Map<String, Integer> selectedCapabilities() {
+    return Map.of(
+      ProtocolCapabilities.COMMAND_EXECUTE, ProtocolCapabilities.V1,
+      ProtocolCapabilities.LOG_FORWARD, ProtocolCapabilities.V1,
+      ProtocolCapabilities.INTERACTIVITY_STATUS, ProtocolCapabilities.V1,
+      ProtocolCapabilities.COMPLETION, ProtocolCapabilities.V1,
+      ProtocolCapabilities.SYNTAX_HIGHLIGHT, ProtocolCapabilities.V1,
+      ProtocolCapabilities.PARSE, ProtocolCapabilities.V1
+    );
   }
 
   private static void waitForCondition(final Duration timeout, final Condition condition) throws Exception {

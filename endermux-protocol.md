@@ -1,7 +1,7 @@
 # Endermux Protocol Specification
 
 Status: Active  
-Protocol version: `11`
+Transport epoch: `15`
 
 This document defines the wire protocol implemented by `endermux-client` and `endermux-server`.
 
@@ -9,14 +9,13 @@ This document defines the wire protocol implemented by `endermux-client` and `en
 
 The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are to be interpreted as described in RFC 2119.
 
-## 2. Versioning
+## 2. Versioning Model
 
-1. The protocol version constant is `SocketProtocolConstants.PROTOCOL_VERSION` (`11`).
-2. The client MUST send its version in `HELLO.data.protocolVersion`.
-3. The server MUST compare the received version to its own version.
-4. If versions match, the server MUST reply `WELCOME`.
-5. If versions do not match, the server MUST reply `REJECT` and close the connection.
-6. Any wire-incompatible change MUST increment `PROTOCOL_VERSION`.
+1. Transport compatibility is versioned by `SocketProtocolConstants.TRANSPORT_EPOCH` (`15`).
+2. `TRANSPORT_EPOCH` covers framing, envelope shape, and handshake schema.
+3. Feature behavior is negotiated per capability (see Section 8).
+4. Any wire-incompatible transport change MUST increment `TRANSPORT_EPOCH`.
+5. Any incompatible feature change MUST increment that capability's version.
 
 ## 3. Transport and Framing
 
@@ -34,7 +33,7 @@ Every frame payload is a JSON object with this envelope:
 
 | Field | Type | Required | Notes |
 |---|---|---|---|
-| `type` | string | yes | Name of `MessageType` enum value |
+| `type` | string | yes | Name of `MessageType` constant |
 | `requestId` | string | conditional | Required for request/response flows |
 | `data` | object | yes | Payload object for `type` |
 
@@ -51,11 +50,11 @@ Example:
 ## 5. Connection Lifecycle and Handshake
 
 1. Client connects to the socket.
-2. Client sends `HELLO` with a `requestId`.
+2. Client sends `HELLO` with `requestId`.
 3. Server reads the first message with handshake timeout.
 4. Server responds with exactly one of:
-   1. `WELCOME` if protocol is accepted.
-   2. `REJECT` if request is invalid or protocol is incompatible.
+   1. `WELCOME` if transport epoch and required capabilities are accepted.
+   2. `REJECT` if request is invalid or negotiation fails.
 5. If `WELCOME` is sent, normal message exchange begins.
 6. Server then sends initial `INTERACTIVITY_STATUS`.
 
@@ -78,13 +77,13 @@ Handshake constraints:
 | `PARSE_REQUEST` | yes | `PARSE_RESPONSE` or `ERROR` |
 | `COMMAND_EXECUTE` | no | none (fire-and-forget, `ERROR` possible) |
 | `PING` | yes | `PONG` or `ERROR` |
-| `CLIENT_READY` | no | none |
+| `LOG_SUBSCRIBE` | no | none |
 
 ### 6.2 Server to Client
 
 | Type | Correlated by `requestId` | Purpose |
 |---|---|---|
-| `WELCOME` | yes (handshake) | Accept connection and provide server info |
+| `WELCOME` | yes (handshake) | Accept connection and return negotiated capabilities |
 | `REJECT` | yes when requestId exists | Reject handshake |
 | `COMPLETION_RESPONSE` | yes | Completion results |
 | `SYNTAX_HIGHLIGHT_RESPONSE` | yes | Highlighted command text |
@@ -102,20 +101,20 @@ Handshake constraints:
 
 | Type | Payload fields |
 |---|---|
-| `HELLO` | `protocolVersion: int`, `colorLevel: ColorLevel` |
+| `HELLO` | `transportEpoch: int`, `colorLevel: ColorLevel`, `capabilities: map<string, CapabilityVersionRange>`, `requiredCapabilities: string[]` |
 | `COMPLETION_REQUEST` | `command: string`, `cursor: int` |
 | `SYNTAX_HIGHLIGHT_REQUEST` | `command: string` |
 | `PARSE_REQUEST` | `command: string`, `cursor: int` |
 | `COMMAND_EXECUTE` | `command: string` |
 | `PING` | _(empty object)_ |
-| `CLIENT_READY` | _(empty object)_ |
+| `LOG_SUBSCRIBE` | _(empty object)_ |
 
 ### 7.2 Server to Client payloads
 
 | Type | Payload fields |
 |---|---|
-| `WELCOME` | `protocolVersion: int` |
-| `REJECT` | `reason: string`, `expectedVersion: int` |
+| `WELCOME` | `transportEpoch: int`, `selectedCapabilities: map<string, int>` |
+| `REJECT` | `reason: string` (see 7.3), `message: string`, `expectedTransportEpoch: int?`, `missingRequiredCapabilities: string[]` |
 | `COMPLETION_RESPONSE` | `candidates: CandidateInfo[]` |
 | `SYNTAX_HIGHLIGHT_RESPONSE` | `command: string`, `highlighted: string` |
 | `PARSE_RESPONSE` | `word: string`, `wordCursor: int`, `wordIndex: int`, `words: string[]`, `line: string`, `cursor: int` |
@@ -124,7 +123,22 @@ Handshake constraints:
 | `ERROR` | `message: string`, `details: string?` |
 | `INTERACTIVITY_STATUS` | `available: boolean` |
 
-### 7.3 Nested payload types
+### 7.3 `REJECT.reason` Codes
+
+`REJECT.reason` values are machine-readable string constants:
+
+1. `missing_request_id`
+2. `expected_hello`
+3. `unsupported_transport_epoch`
+4. `missing_color_level`
+5. `missing_capability_negotiation_data`
+6. `invalid_capability_version_range`
+7. `invalid_required_capability_declaration`
+8. `missing_required_capabilities`
+
+Clients MAY implement specialized handling for known `REJECT.reason` values and SHOULD treat unknown values as fatal incompatibility.
+
+### 7.4 Nested payload types
 
 `CandidateInfo`:
 
@@ -144,33 +158,66 @@ Handshake constraints:
 | `INDEXED_256` |
 | `TRUE_COLOR` |
 
-## 8. Request/Response Rules
+`CapabilityVersionRange`:
+
+| Field | Type |
+|---|---|
+| `min` | int |
+| `max` | int |
+
+## 8. Capability Negotiation
+
+Capability names are lowercase strings.
+
+Baseline capabilities in transport epoch `15`:
+
+1. Required by client:
+   1. `command_execute`
+   2. `log_forward`
+   3. `interactivity_status`
+2. Optional:
+   1. `completion`
+   2. `syntax_highlight`
+   3. `parse`
+
+Negotiation rules:
+
+1. Client advertises supported version ranges in `HELLO.capabilities`.
+2. Client advertises hard-required capability names in `HELLO.requiredCapabilities`.
+3. Server computes the highest common version for each known capability.
+4. Server returns selected versions in `WELCOME.selectedCapabilities`.
+5. If any required capability is not negotiated, server MUST send `REJECT` with `missingRequiredCapabilities`.
+6. After `WELCOME`, both peers MUST only use messages associated with negotiated capabilities.
+7. Capability policy is role-specific: client `HELLO` capability/required sets and server supported capability set evolve independently.
+
+## 9. Request/Response Rules
 
 1. For message types marked "Requires `requestId`", the sender MUST provide a non-null `requestId`.
 2. A response to a request MUST echo the same `requestId`.
 3. `ERROR` MAY be correlated (with `requestId`) or unsolicited (without `requestId`).
 4. `COMMAND_EXECUTE` is fire-and-forget. Command output is returned through `LOG_FORWARD`, with optional `ERROR`.
 
-## 9. Interactivity and Log Forwarding
+## 10. Interactivity and Log Forwarding
 
-1. Server sends `INTERACTIVITY_STATUS` after successful handshake and whenever availability changes.
-2. Interactivity-gated requests are:
+1. `interactivity_status` capability is required.
+2. Server sends `INTERACTIVITY_STATUS` after successful handshake and whenever availability changes.
+3. Interactivity-gated requests are:
    1. `COMPLETION_REQUEST`
    2. `SYNTAX_HIGHLIGHT_REQUEST`
    3. `PARSE_REQUEST`
    4. `COMMAND_EXECUTE`
-3. If interactivity is unavailable, server responds with `ERROR` for gated operations.
-4. Client sends `CLIENT_READY` when it is ready to consume forwarded logs.
-5. Server forwards `LOG_FORWARD` messages only for clients marked ready.
+4. If interactivity is unavailable, server responds with `ERROR` for gated operations.
+5. Client sends `LOG_SUBSCRIBE` when it is ready to consume forwarded logs.
+6. Server forwards `LOG_FORWARD` messages only for clients marked ready.
 
-## 10. Error Handling and Close Semantics
+## 11. Error Handling and Close Semantics
 
 1. Invalid JSON, unknown `type`, or payload decode failure is a protocol error.
 2. Transport read/write failures terminate the session.
 3. There is no explicit disconnect message; disconnect is socket closure.
 4. `ERROR` reports application/protocol request failures but does not require immediate disconnect.
 
-## 11. Timeouts and Limits
+## 12. Timeouts and Limits
 
 | Constant | Value |
 |---|---|
@@ -180,8 +227,9 @@ Handshake constraints:
 | Syntax highlight timeout | `1000ms` |
 | Max frame size | `1 MiB` |
 
-## 12. Compatibility Policy
+## 13. Compatibility Policy
 
-1. Wire compatibility is guaranteed only when protocol versions match.
-2. Mixed-version peers MUST fail handshake (typically with `REJECT`).
-3. If behavior and this document diverge, implementation and documentation MUST be updated together.
+1. Compatibility across releases in the same transport epoch is achieved by capability negotiation.
+2. Newer clients SHOULD keep adapters for older selected capability versions.
+3. Missing required capabilities MUST fail handshake.
+4. If behavior and this document diverge, implementation and documentation MUST be updated together.

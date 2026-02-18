@@ -10,6 +10,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.EnumMap;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -24,12 +25,12 @@ import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.jpenilla.endermux.protocol.CapabilityVersionRange;
 import xyz.jpenilla.endermux.protocol.Message;
-import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
-import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.server.api.InteractiveConsoleHooks;
 import xyz.jpenilla.endermux.server.handlers.CommandHandler;
 import xyz.jpenilla.endermux.server.handlers.CompletionHandler;
@@ -40,11 +41,13 @@ import xyz.jpenilla.endermux.server.handlers.SyntaxHighlightHandler;
 @NullMarked
 public final class EndermuxServer {
   private static final Logger LOGGER = LoggerFactory.getLogger(EndermuxServer.class);
+  private static final Map<String, CapabilityVersionRange> SUPPORTED_CAPABILITIES = ProtocolCapabilities.serverSupportedCapabilities();
 
   private final Set<ClientEndpoint> connections = ConcurrentHashMap.newKeySet();
   private final ConcurrentHashMap<ClientEndpoint, ClientSession> sessions = new ConcurrentHashMap<>();
   private final ExecutorService executor;
   private final HandlerRegistry handlerRegistry;
+  private final ServerHandshakeHandler handshakeHandler;
   private final MessageSerializer serializer;
   private final Path socketPath;
   private final Path socketStartupPath;
@@ -72,6 +75,7 @@ public final class EndermuxServer {
         .factory()
     );
     this.handlerRegistry = new HandlerRegistry();
+    this.handshakeHandler = new ServerHandshakeHandler(SUPPORTED_CAPABILITIES);
     this.serializer = MessageSerializer.createStandard();
 
     this.registerHandlers();
@@ -160,12 +164,13 @@ public final class EndermuxServer {
 
   private void runConnection(final ClientEndpoint connection, final ClientSession session) {
     try {
-      final Payloads.Hello hello = this.performHandshake(connection);
-      if (hello == null) {
+      final ServerHandshakeHandler.HandshakeResult handshake = this.handshakeHandler.performHandshake(connection);
+      if (handshake == null) {
         connection.close();
         return;
       }
-      session.setColorLevel(hello.colorLevel());
+      session.setColorLevel(handshake.hello().colorLevel());
+      session.setNegotiatedCapabilities(handshake.selectedCapabilities());
 
       this.sessions.put(connection, session);
       this.connections.add(connection);
@@ -178,50 +183,6 @@ public final class EndermuxServer {
       LOGGER.debug("Console socket connection setup failed", e);
       connection.close();
     }
-  }
-
-  private Payloads.@Nullable Hello performHandshake(final ClientEndpoint connection) throws IOException {
-    final Message<?> message = connection.readInitialMessage(SocketProtocolConstants.HANDSHAKE_TIMEOUT_MS);
-    final @Nullable String requestId = message.requestId();
-    if (requestId == null) {
-      this.sendHandshakeResponse(connection, null, new Payloads.Reject("Missing requestId", SocketProtocolConstants.PROTOCOL_VERSION));
-      return null;
-    }
-    if (message.type() != MessageType.HELLO || !(message.payload() instanceof Payloads.Hello hello)) {
-      this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Expected HELLO", SocketProtocolConstants.PROTOCOL_VERSION));
-      return null;
-    }
-
-    if (hello.protocolVersion() != SocketProtocolConstants.PROTOCOL_VERSION) {
-      this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Unsupported protocol version", SocketProtocolConstants.PROTOCOL_VERSION));
-      return null;
-    }
-
-    if (hello.colorLevel() == null) {
-      this.sendHandshakeResponse(connection, requestId, new Payloads.Reject("Missing color level", SocketProtocolConstants.PROTOCOL_VERSION));
-      return null;
-    }
-
-    this.sendHandshakeResponse(connection, requestId, this.welcomePayload());
-    return hello;
-  }
-
-  private void sendHandshakeResponse(
-    final ClientEndpoint connection,
-    final @Nullable String requestId,
-    final MessagePayload payload
-  ) {
-    final MessageType type = MessageType.responseTypeForPayload(payload);
-    final Message<?> message = requestId == null
-      ? Message.unsolicited(type, payload)
-      : Message.response(requestId, type, payload);
-    if (!connection.sendNow(message)) {
-      LOGGER.debug("Failed to send handshake response to client");
-    }
-  }
-
-  private Payloads.Welcome welcomePayload() {
-    return new Payloads.Welcome(SocketProtocolConstants.PROTOCOL_VERSION);
   }
 
   private void closeServerChannel() {

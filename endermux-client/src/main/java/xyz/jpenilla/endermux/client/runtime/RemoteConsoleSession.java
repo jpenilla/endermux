@@ -15,7 +15,7 @@ import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
-import xyz.jpenilla.endermux.client.transport.ProtocolMismatchException;
+import xyz.jpenilla.endermux.client.transport.HandshakeFatalException;
 import xyz.jpenilla.endermux.client.transport.SocketTransport;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
@@ -55,7 +55,7 @@ final class RemoteConsoleSession {
   }
 
   SessionOutcome run() {
-    boolean connected = false;
+    boolean didConnect = false;
     try {
       this.socketClient = new SocketTransport(this.socketPath);
       this.interactiveAvailable = false;
@@ -64,7 +64,7 @@ final class RemoteConsoleSession {
       client.setDisconnectCallback(this::onDisconnect);
       client.setMessageHandler(this::handleMessage);
       client.connect();
-      connected = true;
+      didConnect = true;
 
       LOGGER.info(text()
         .append(text("Connected to Endermux server via socket: ", NamedTextColor.DARK_GREEN, TextDecoration.BOLD))
@@ -75,17 +75,18 @@ final class RemoteConsoleSession {
       this.lineReader = this.terminalContext.createLineReader(client, highlighter);
       TerminalOutput.setLineReader(this.lineReader);
 
-      client.sendMessage(Message.unsolicited(MessageType.CLIENT_READY, new Payloads.ClientReady()));
+      client.sendMessage(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
 
       final boolean userQuit = this.acceptInput();
-      return new SessionOutcome(connected, userQuit, userQuit ? DisconnectReason.USER_EOF : null);
-    } catch (final ProtocolMismatchException e) {
-      LOGGER.error(protocolMismatchMessage(e));
-      return new SessionOutcome(connected, true, null);
+      return new SessionOutcome(didConnect, userQuit, userQuit ? DisconnectReason.USER_EOF : DisconnectReason.GRACEFUL_SERVER_OR_USER_INTERRUPT);
+    } catch (final HandshakeFatalException e) {
+      final String message = e.userFacingMessage();
+      LOGGER.error(message);
+      return new SessionOutcome(didConnect, true, DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE);
     } catch (final Exception e) {
       LOGGER.debug("Connection failure", e);
       LOGGER.error("Connection failed: {}", e.getMessage());
-      return new SessionOutcome(connected, false, null);
+      return new SessionOutcome(didConnect, false, DisconnectReason.GENERIC_CONNECTION_ERROR);
     } finally {
       this.cleanup();
     }
@@ -305,21 +306,6 @@ final class RemoteConsoleSession {
     return client;
   }
 
-  private static String protocolMismatchMessage(final ProtocolMismatchException e) {
-    final StringBuilder message = new StringBuilder();
-    message.append("Protocol mismatch: server expects v");
-    message.append(e.expectedVersion());
-    message.append(", client is v");
-    message.append(e.actualVersion());
-    final String reason = e.reason();
-    if (reason != null && !reason.isBlank()) {
-      message.append(". Reason: ");
-      message.append(reason);
-    }
-    message.append(". Please update client/server to matching versions.");
-    return message.toString();
-  }
-
   private boolean userRequestedDisconnect() {
     LOGGER.info(DISCONNECTING_MESSAGE);
     return true;
@@ -337,9 +323,16 @@ final class RemoteConsoleSession {
   }
 
   enum DisconnectReason {
-    USER_EOF
+    USER_EOF,
+    GRACEFUL_SERVER_OR_USER_INTERRUPT,
+    UNRECOVERABLE_HANDSHAKE_FAILURE,
+    GENERIC_CONNECTION_ERROR
   }
 
-  record SessionOutcome(boolean connected, boolean stopClient, @Nullable DisconnectReason disconnectReason) {
+  record SessionOutcome(
+    boolean didConnect,
+    boolean quitClient,
+    DisconnectReason disconnectReason
+  ) {
   }
 }

@@ -13,4 +13,5 @@
 
 - Keep docs (endermux-protocol.md, AGENTS.md) in sync with implementation.
 - If behavior and docs diverge, fix both in the same change.
-- For wire-format or protocol semantic changes, bump protocol version and update `endermux-protocol.md` in the same change.
+- For wire-format/handshake changes, bump transport epoch and update `endermux-protocol.md` in the same change.
+- For capability-level semantic changes, bump that capability version and update `endermux-protocol.md` in the same change.

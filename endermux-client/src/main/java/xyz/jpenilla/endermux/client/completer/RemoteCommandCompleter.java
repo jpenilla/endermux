@@ -14,6 +14,7 @@ import xyz.jpenilla.endermux.jline.MinecraftCandidate;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 
 @NullMarked
@@ -29,7 +30,9 @@ public final class RemoteCommandCompleter implements Completer {
 
   @Override
   public void complete(final LineReader reader, final ParsedLine line, final List<Candidate> candidates) {
-    if (!this.socketClient.isConnected() || !this.socketClient.isInteractivityAvailable()) {
+    if (!this.socketClient.isConnected()
+      || !this.socketClient.isInteractivityAvailable()
+      || !this.socketClient.supportsCapability(ProtocolCapabilities.COMPLETION)) {
       return;
     }
 

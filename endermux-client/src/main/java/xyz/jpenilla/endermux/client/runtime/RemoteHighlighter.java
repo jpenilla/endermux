@@ -18,6 +18,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.jpenilla.endermux.client.transport.SocketTransport;
+import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 
 @NullMarked
 public final class RemoteHighlighter implements Highlighter {
@@ -47,7 +48,9 @@ public final class RemoteHighlighter implements Highlighter {
   @Override
   public AttributedString highlight(final LineReader reader, final String buffer) {
     this.latestBuffer = buffer;
-    if (!this.socketClient.isConnected() || !this.socketClient.isInteractivityAvailable()) {
+    if (!this.socketClient.isConnected()
+      || !this.socketClient.isInteractivityAvailable()
+      || !this.socketClient.supportsCapability(ProtocolCapabilities.SYNTAX_HIGHLIGHT)) {
       return createUnhighlighted(buffer);
     }
 

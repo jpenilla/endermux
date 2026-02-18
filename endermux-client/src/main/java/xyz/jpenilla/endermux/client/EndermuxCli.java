@@ -60,8 +60,7 @@ public final class EndermuxCli implements Callable<Integer> {
   public Integer call() {
     this.configureLogging();
     try {
-      new EndermuxClient().run(this.socketPath);
-      return 0;
+      return new EndermuxClient().run(this.socketPath);
     } catch (final Exception e) {
       LOGGER.error("Error starting Endermux client", e);
       return 1;

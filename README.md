@@ -45,9 +45,10 @@ If there is serious interest in supporting other transport (i.e., TCP), it's som
 
 1) If the socket does not exist yet, the client will use file watching (falling back to polling if necessary) to wait for it to appear.
 2) Once the socket exists, the client will attempt to connect to it.
-3) If the connection fails, the client will retry indefinitely with a backoff delay.
-4) On successful connection, the client attaches to the remote console session.
-5) On lost connection (graceful or otherwise), the client will restart at step 1.
+3) If the connection fails for transient reasons (for example I/O errors), the client will retry indefinitely with exponential backoff (capped at 1 minute).
+4) If handshake fails with a fatal reject reason (for example transport epoch mismatch, missing required capabilities, or an unknown reject reason), the client exits immediately without retrying (non-zero exit code).
+5) On successful connection, the client attaches to the remote console session.
+6) On lost connection (graceful or otherwise), the client will restart at step 1.
 
 ### Controls
 

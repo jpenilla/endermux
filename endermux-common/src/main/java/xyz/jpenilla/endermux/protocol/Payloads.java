@@ -1,6 +1,8 @@
 package xyz.jpenilla.endermux.protocol;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
 import org.jspecify.annotations.Nullable;
@@ -13,7 +15,12 @@ public final class Payloads {
 
   // Client -> Server payloads
 
-  public record Hello(int protocolVersion, ColorLevel colorLevel) implements MessagePayload {
+  public record Hello(
+    int transportEpoch,
+    ColorLevel colorLevel,
+    Map<String, CapabilityVersionRange> capabilities,
+    Set<String> requiredCapabilities
+  ) implements MessagePayload {
   }
 
   public record CompletionRequest(String command, int cursor) implements MessagePayload {
@@ -31,15 +38,23 @@ public final class Payloads {
   public record Ping() implements MessagePayload {
   }
 
-  public record ClientReady() implements MessagePayload {
+  public record LogSubscribe() implements MessagePayload {
   }
 
   // Server -> Client payloads
 
-  public record Welcome(int protocolVersion) implements MessagePayload {
+  public record Welcome(
+    int transportEpoch,
+    Map<String, Integer> selectedCapabilities
+  ) implements MessagePayload {
   }
 
-  public record Reject(String reason, int expectedVersion) implements MessagePayload {
+  public record Reject(
+    String reason,
+    String message,
+    @Nullable Integer expectedTransportEpoch,
+    Set<String> missingRequiredCapabilities
+  ) implements MessagePayload {
   }
 
   public record CompletionResponse(List<CandidateInfo> candidates) implements MessagePayload {

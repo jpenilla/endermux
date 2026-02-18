@@ -1,5 +1,6 @@
 package xyz.jpenilla.endermux.server;
 
+import java.util.Map;
 import java.util.function.Consumer;
 import net.kyori.ansi.ColorLevel;
 import org.jspecify.annotations.NullMarked;
@@ -24,6 +25,7 @@ public final class ClientSession implements Consumer<Message<?>> {
   private volatile boolean logReady = false;
   private volatile boolean interactivityAvailable;
   private volatile ColorLevel colorLevel = ColorLevel.NONE;
+  private volatile Map<String, Integer> negotiatedCapabilities = Map.of();
 
   public ClientSession(
     final ClientEndpoint connection,
@@ -36,17 +38,19 @@ public final class ClientSession implements Consumer<Message<?>> {
   }
 
   public void initialize() {
-    this.send(Message.unsolicited(
-      MessageType.INTERACTIVITY_STATUS,
-      new Payloads.InteractivityStatus(this.interactivityAvailable)
-    ));
+    if (this.supportsCapability(MessageType.INTERACTIVITY_STATUS)) {
+      this.send(Message.unsolicited(
+        MessageType.INTERACTIVITY_STATUS,
+        new Payloads.InteractivityStatus(this.interactivityAvailable)
+      ));
+    }
   }
 
   @Override
   public void accept(final Message<?> message) {
     final ResponseContext ctx = new ImmutableResponseContext(message.requestId());
 
-    if (message.requestId() == null && message.type().requiresResponse()) {
+    if (message.requestId() == null && message.type().requestIdRequired()) {
       ctx.error("Missing requestId for message type: " + message.type());
       return;
     }
@@ -56,7 +60,17 @@ public final class ClientSession implements Consumer<Message<?>> {
       return;
     }
 
-    if (message.type() == MessageType.CLIENT_READY) {
+    final @Nullable String capability = message.type().capability();
+    if (capability != null && !this.supportsCapability(capability)) {
+      ctx.error("Capability not negotiated: " + capability);
+      return;
+    }
+
+    if (message.type() == MessageType.LOG_SUBSCRIBE) {
+      if (!this.supportsCapability(MessageType.LOG_FORWARD)) {
+        ctx.error("Capability not negotiated: " + MessageType.LOG_FORWARD.capability());
+        return;
+      }
       this.logReady = true;
       return;
     }
@@ -66,7 +80,7 @@ public final class ClientSession implements Consumer<Message<?>> {
       return;
     }
 
-    if (!this.interactivityAvailable && this.requiresInteractivity(message.type())) {
+    if (!this.interactivityAvailable && message.type().requiresInteractivity()) {
       ctx.error("Interactivity is currently unavailable");
       return;
     }
@@ -86,7 +100,7 @@ public final class ClientSession implements Consumer<Message<?>> {
   }
 
   public boolean isLogReady() {
-    return this.logReady;
+    return this.logReady && this.supportsCapability(MessageType.LOG_FORWARD);
   }
 
   public ColorLevel colorLevel() {
@@ -97,19 +111,27 @@ public final class ClientSession implements Consumer<Message<?>> {
     this.colorLevel = colorLevel;
   }
 
-  void setInteractivityAvailable(final boolean available) {
-    this.interactivityAvailable = available;
-    this.send(Message.unsolicited(
-      MessageType.INTERACTIVITY_STATUS,
-      new Payloads.InteractivityStatus(available)
-    ));
+  void setNegotiatedCapabilities(final Map<String, Integer> negotiatedCapabilities) {
+    this.negotiatedCapabilities = Map.copyOf(negotiatedCapabilities);
   }
 
-  private boolean requiresInteractivity(final MessageType type) {
-    return switch (type) {
-      case COMPLETION_REQUEST, SYNTAX_HIGHLIGHT_REQUEST, PARSE_REQUEST, COMMAND_EXECUTE -> true;
-      default -> false;
-    };
+  void setInteractivityAvailable(final boolean available) {
+    this.interactivityAvailable = available;
+    if (this.supportsCapability(MessageType.INTERACTIVITY_STATUS)) {
+      this.send(Message.unsolicited(
+        MessageType.INTERACTIVITY_STATUS,
+        new Payloads.InteractivityStatus(available)
+      ));
+    }
+  }
+
+  private boolean supportsCapability(final String capability) {
+    return this.negotiatedCapabilities.containsKey(capability);
+  }
+
+  private boolean supportsCapability(final MessageType type) {
+    final @Nullable String capability = type.capability();
+    return capability == null || this.supportsCapability(capability);
   }
 
   private void handlePing(final ResponseContext ctx) {
@@ -150,7 +172,7 @@ public final class ClientSession implements Consumer<Message<?>> {
     }
 
     private Message<?> buildResponse(final MessagePayload payload) {
-      final MessageType responseType = MessageType.responseTypeForPayload(payload);
+      final MessageType responseType = MessageType.serverTypeForPayload(payload);
       return this.requestId != null
         ? Message.response(this.requestId, responseType, payload)
         : Message.unsolicited(responseType, payload);
