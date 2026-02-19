@@ -53,7 +53,7 @@ class MessageSerializerTest {
         "req-hello",
         MessageType.HELLO,
         new Payloads.Hello(
-          SocketProtocolConstants.TRANSPORT_EPOCH,
+          SocketProtocolConstants.CLIENT_SUPPORTED_TRANSPORT_EPOCH_RANGE,
           ColorLevel.INDEXED_16,
           ProtocolCapabilities.clientSupportedCapabilities(),
           ProtocolCapabilities.clientRequiredCapabilities()

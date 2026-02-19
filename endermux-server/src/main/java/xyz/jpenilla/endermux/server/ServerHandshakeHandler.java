@@ -54,7 +54,20 @@ final class ServerHandshakeHandler {
       return null;
     }
 
-    if (hello.transportEpoch() != SocketProtocolConstants.TRANSPORT_EPOCH) {
+    final CapabilityVersionRange transportEpochRange = hello.transportEpochRange();
+    if (transportEpochRange == null || !transportEpochRange.isValid()) {
+      this.sendHandshakeReject(
+        connection,
+        requestId,
+        HandshakeRejectReasons.INVALID_TRANSPORT_EPOCH_RANGE,
+        "Invalid transport epoch range",
+        SocketProtocolConstants.TRANSPORT_EPOCH,
+        Set.of()
+      );
+      return null;
+    }
+
+    if (!transportEpochRange.includes(SocketProtocolConstants.TRANSPORT_EPOCH)) {
       this.sendHandshakeReject(
         connection,
         requestId,

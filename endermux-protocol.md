@@ -1,7 +1,7 @@
 # Endermux Protocol Specification
 
 Status: Active  
-Transport epoch: `15`
+Transport epoch: `16`
 
 This document defines the wire protocol implemented by `endermux-client` and `endermux-server`.
 
@@ -11,7 +11,7 @@ The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are to be in
 
 ## 2. Versioning Model
 
-1. Transport compatibility is versioned by `SocketProtocolConstants.TRANSPORT_EPOCH` (`15`).
+1. Transport compatibility is versioned by `SocketProtocolConstants.TRANSPORT_EPOCH` (`16`).
 2. `TRANSPORT_EPOCH` covers framing, envelope shape, and handshake schema.
 3. Feature behavior is negotiated per capability (see Section 8).
 4. Any wire-incompatible transport change MUST increment `TRANSPORT_EPOCH`.
@@ -53,7 +53,7 @@ Example:
 2. Client sends `HELLO` with `requestId`.
 3. Server reads the first message with handshake timeout.
 4. Server responds with exactly one of:
-   1. `WELCOME` if transport epoch and required capabilities are accepted.
+   1. `WELCOME` if a transport epoch is selected and required capabilities are accepted.
    2. `REJECT` if request is invalid or negotiation fails.
 5. If `WELCOME` is sent, normal message exchange begins.
 6. Server then sends initial `INTERACTIVITY_STATUS`.
@@ -64,6 +64,9 @@ Handshake constraints:
 2. `HELLO` MUST be the first message.
 3. Handshake timeout is `2000ms` with `1000ms` join grace.
 4. Timeout or transport failure closes the connection; timeout `REJECT` delivery is not guaranteed.
+5. `HELLO.transportEpochRange` MUST be valid.
+6. Server MUST accept the handshake only if `TRANSPORT_EPOCH` is included in `HELLO.transportEpochRange`.
+7. On success, server MUST set `WELCOME.transportEpoch` to the selected transport epoch.
 
 ## 6. Message Catalog
 
@@ -101,7 +104,7 @@ Handshake constraints:
 
 | Type | Payload fields |
 |---|---|
-| `HELLO` | `transportEpoch: int`, `colorLevel: ColorLevel`, `capabilities: map<string, CapabilityVersionRange>`, `requiredCapabilities: string[]` |
+| `HELLO` | `transportEpochRange: CapabilityVersionRange`, `colorLevel: ColorLevel`, `capabilities: map<string, CapabilityVersionRange>`, `requiredCapabilities: string[]` |
 | `COMPLETION_REQUEST` | `command: string`, `cursor: int` |
 | `SYNTAX_HIGHLIGHT_REQUEST` | `command: string` |
 | `PARSE_REQUEST` | `command: string`, `cursor: int` |
@@ -130,11 +133,12 @@ Handshake constraints:
 1. `missing_request_id`
 2. `expected_hello`
 3. `unsupported_transport_epoch`
-4. `missing_color_level`
-5. `missing_capability_negotiation_data`
-6. `invalid_capability_version_range`
-7. `invalid_required_capability_declaration`
-8. `missing_required_capabilities`
+4. `invalid_transport_epoch_range`
+5. `missing_color_level`
+6. `missing_capability_negotiation_data`
+7. `invalid_capability_version_range`
+8. `invalid_required_capability_declaration`
+9. `missing_required_capabilities`
 
 Clients MAY implement specialized handling for known `REJECT.reason` values and SHOULD treat unknown values as fatal incompatibility.
 
@@ -164,12 +168,13 @@ Clients MAY implement specialized handling for known `REJECT.reason` values and 
 |---|---|
 | `min` | int |
 | `max` | int |
+| `exclude` | int[] (optional, defaults empty) |
 
 ## 8. Capability Negotiation
 
 Capability names are lowercase strings.
 
-Baseline capabilities in transport epoch `15`:
+Baseline capabilities in transport epoch `16`:
 
 1. Required by client:
    1. `command_execute`
@@ -229,7 +234,7 @@ Negotiation rules:
 
 ## 13. Compatibility Policy
 
-1. Compatibility across releases in the same transport epoch is achieved by capability negotiation.
+1. Compatibility across releases is achieved by transport epoch negotiation and capability negotiation.
 2. Newer clients SHOULD keep adapters for older selected capability versions.
 3. Missing required capabilities MUST fail handshake.
 4. If behavior and this document diverge, implementation and documentation MUST be updated together.

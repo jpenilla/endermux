@@ -16,7 +16,7 @@ public final class Payloads {
   // Client -> Server payloads
 
   public record Hello(
-    int transportEpoch,
+    CapabilityVersionRange transportEpochRange,
     ColorLevel colorLevel,
     Map<String, CapabilityVersionRange> capabilities,
     Set<String> requiredCapabilities

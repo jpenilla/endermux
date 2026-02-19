@@ -252,7 +252,11 @@ public final class SocketTransport {
   }
 
   private void performHandshake() throws IOException, HandshakeFatalException {
-    final ClientHandshakeHandler handshake = new ClientHandshakeHandler(SUPPORTED_CAPABILITIES, REQUIRED_CAPABILITIES);
+    final ClientHandshakeHandler handshake = new ClientHandshakeHandler(
+      SocketProtocolConstants.CLIENT_SUPPORTED_TRANSPORT_EPOCH_RANGE,
+      SUPPORTED_CAPABILITIES,
+      REQUIRED_CAPABILITIES
+    );
     final Payloads.Hello hello = handshake.createHelloPayload();
     final String helloRequestId = UUID.randomUUID().toString();
     final Message<Payloads.Hello> helloMessage = Message.<Payloads.Hello>builder(MessageType.HELLO)

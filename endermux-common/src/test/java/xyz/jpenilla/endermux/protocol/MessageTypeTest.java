@@ -26,7 +26,7 @@ class MessageTypeTest {
   @Test
   void serverTypeForClientPayloadsThrows() {
     assertThrows(IllegalArgumentException.class, () -> MessageType.serverTypeForPayload(new Payloads.Hello(
-      8,
+      new CapabilityVersionRange(8, 8),
       ColorLevel.INDEXED_16,
       java.util.Map.of(),
       java.util.Set.of()

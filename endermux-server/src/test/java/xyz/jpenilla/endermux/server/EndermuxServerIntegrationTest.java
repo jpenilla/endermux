@@ -130,7 +130,13 @@ class EndermuxServerIntegrationTest {
       client.send(Message.response(
         requestId,
         MessageType.HELLO,
-        helloWithTransportEpoch(SocketProtocolConstants.TRANSPORT_EPOCH + 1, ColorLevel.INDEXED_16)
+        helloWithTransportEpochRange(
+          new CapabilityVersionRange(
+            SocketProtocolConstants.TRANSPORT_EPOCH + 1,
+            SocketProtocolConstants.TRANSPORT_EPOCH + 1
+          ),
+          ColorLevel.INDEXED_16
+        )
       ));
 
       final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
@@ -141,6 +147,37 @@ class EndermuxServerIntegrationTest {
       final Payloads.Reject payload = (Payloads.Reject) reject.payload();
       assertEquals(HandshakeRejectReasons.UNSUPPORTED_TRANSPORT_EPOCH, payload.reason());
       assertEquals("Unsupported transport epoch", payload.message());
+      assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.expectedTransportEpoch());
+    }
+  }
+
+  @Test
+  void handshakeRejectsInvalidTransportEpochRange() throws Exception {
+    final Path socket = this.startServer();
+
+    try (TestClient client = TestClient.connect(socket)) {
+      final String requestId = UUID.randomUUID().toString();
+      client.send(Message.response(
+        requestId,
+        MessageType.HELLO,
+        helloWithTransportEpochRange(
+          new CapabilityVersionRange(
+            SocketProtocolConstants.TRANSPORT_EPOCH,
+            SocketProtocolConstants.TRANSPORT_EPOCH,
+            Set.of(SocketProtocolConstants.TRANSPORT_EPOCH + 1)
+          ),
+          ColorLevel.INDEXED_16
+        )
+      ));
+
+      final Message<?> reject = client.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(reject);
+      assertEquals(MessageType.REJECT, reject.type());
+      assertEquals(requestId, reject.requestId());
+
+      final Payloads.Reject payload = (Payloads.Reject) reject.payload();
+      assertEquals(HandshakeRejectReasons.INVALID_TRANSPORT_EPOCH_RANGE, payload.reason());
+      assertEquals("Invalid transport epoch range", payload.message());
       assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.expectedTransportEpoch());
     }
   }
@@ -159,7 +196,10 @@ class EndermuxServerIntegrationTest {
         requestId,
         MessageType.HELLO,
         new Payloads.Hello(
-          SocketProtocolConstants.TRANSPORT_EPOCH,
+          new CapabilityVersionRange(
+            SocketProtocolConstants.TRANSPORT_EPOCH,
+            SocketProtocolConstants.TRANSPORT_EPOCH
+          ),
           ColorLevel.INDEXED_16,
           supportedCapabilities,
           Set.of(ProtocolCapabilities.INTERACTIVITY_STATUS)
@@ -334,12 +374,21 @@ class EndermuxServerIntegrationTest {
   }
 
   private static Payloads.Hello hello(final ColorLevel colorLevel) {
-    return helloWithTransportEpoch(SocketProtocolConstants.TRANSPORT_EPOCH, colorLevel);
+    return helloWithTransportEpochRange(
+      new CapabilityVersionRange(
+        SocketProtocolConstants.TRANSPORT_EPOCH,
+        SocketProtocolConstants.TRANSPORT_EPOCH
+      ),
+      colorLevel
+    );
   }
 
-  private static Payloads.Hello helloWithTransportEpoch(final int transportEpoch, final ColorLevel colorLevel) {
+  private static Payloads.Hello helloWithTransportEpochRange(
+    final CapabilityVersionRange transportEpochRange,
+    final ColorLevel colorLevel
+  ) {
     return new Payloads.Hello(
-      transportEpoch,
+      transportEpochRange,
       colorLevel,
       ProtocolCapabilities.clientSupportedCapabilities(),
       ProtocolCapabilities.clientRequiredCapabilities()

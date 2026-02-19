@@ -11,7 +11,15 @@ public final class SocketProtocolConstants {
   /**
    * Transport epoch version for framing + envelope + handshake structure.
    */
-  public static final int TRANSPORT_EPOCH = 15;
+  public static final int TRANSPORT_EPOCH = 16;
+
+  /**
+   * Lowest transport epoch this client release can negotiate.
+   */
+  public static final int MIN_SUPPORTED_TRANSPORT_EPOCH = 16;
+
+  public static final CapabilityVersionRange CLIENT_SUPPORTED_TRANSPORT_EPOCH_RANGE =
+    new CapabilityVersionRange(MIN_SUPPORTED_TRANSPORT_EPOCH, TRANSPORT_EPOCH);
 
   public static final int MAX_FRAME_SIZE_BYTES = 1024 * 1024;
 

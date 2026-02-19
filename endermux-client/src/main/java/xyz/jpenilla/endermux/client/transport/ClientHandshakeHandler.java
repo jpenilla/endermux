@@ -16,20 +16,26 @@ import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 
 @NullMarked
 final class ClientHandshakeHandler {
+  private final CapabilityVersionRange supportedTransportEpochRange;
   private final Map<String, CapabilityVersionRange> supportedCapabilities;
   private final Set<String> requiredCapabilities;
 
   ClientHandshakeHandler(
+    final CapabilityVersionRange supportedTransportEpochRange,
     final Map<String, CapabilityVersionRange> supportedCapabilities,
     final Set<String> requiredCapabilities
   ) {
+    if (!supportedTransportEpochRange.isValid()) {
+      throw new IllegalArgumentException("supportedTransportEpochRange must be valid");
+    }
+    this.supportedTransportEpochRange = supportedTransportEpochRange;
     this.supportedCapabilities = supportedCapabilities;
     this.requiredCapabilities = requiredCapabilities;
   }
 
   Payloads.Hello createHelloPayload() {
     return new Payloads.Hello(
-      SocketProtocolConstants.TRANSPORT_EPOCH,
+      this.supportedTransportEpochRange,
       ColorLevel.compute(),
       this.supportedCapabilities,
       this.requiredCapabilities
@@ -52,7 +58,7 @@ final class ClientHandshakeHandler {
       throw new InvalidHandshakeResponseException("unexpected response type: " + response.type());
     }
 
-    if (welcome.transportEpoch() != SocketProtocolConstants.TRANSPORT_EPOCH) {
+    if (!this.supportedTransportEpochRange.includes(welcome.transportEpoch())) {
       throw new ProtocolMismatchException(
         "Unsupported transport epoch: " + welcome.transportEpoch(),
         welcome.transportEpoch(),

@@ -384,7 +384,9 @@ class SocketTransportIntegrationTest {
     assertEquals(MessageType.HELLO, hello.type());
     assertInstanceOf(Payloads.Hello.class, hello.payload());
     final Payloads.Hello payload = (Payloads.Hello) hello.payload();
-    assertEquals(SocketProtocolConstants.TRANSPORT_EPOCH, payload.transportEpoch());
+    assertNotNull(payload.transportEpochRange());
+    assertTrue(payload.transportEpochRange().isValid());
+    assertTrue(payload.transportEpochRange().includes(SocketProtocolConstants.TRANSPORT_EPOCH));
     assertNotNull(payload.colorLevel());
     assertNotNull(payload.capabilities());
     assertNotNull(payload.requiredCapabilities());
