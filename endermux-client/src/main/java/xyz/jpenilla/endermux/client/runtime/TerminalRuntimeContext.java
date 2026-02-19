@@ -90,11 +90,19 @@ final class TerminalRuntimeContext implements AutoCloseable {
       .build();
   }
 
-  void interruptActiveReader(final @Nullable LineReader reader) {
+  /**
+   * Attempts to interrupt the active line-reader thread.
+   *
+   * @param reader line reader to interrupt
+   * @return true when an interrupt signal was sent, false when no reader was actively reading
+   */
+  boolean interruptActiveReader(final @Nullable LineReader reader) {
     final Terminal term = this.terminal;
     if (term != null && reader != null && reader.isReading()) {
       term.raise(Terminal.Signal.INT);
+      return true;
     }
+    return false;
   }
 
   @Override

@@ -40,28 +40,13 @@ public final class EndermuxClient {
       this.registerSignalHandlers();
       int retryCount = 0;
       final SocketPathWatcher socketWatcher = new SocketPathWatcher(socketPath, SOCKET_POLL_INTERVAL_MS, LOGGER);
-      while (true) {
-        if (this.shutdownRequested) {
-          break;
-        }
-
-        if (!socketWatcher.waitForSocket(() -> this.shutdownRequested)) {
-          break;
-        }
-
-        if (this.shutdownRequested) {
+      while (!this.shutdownRequested) {
+        if (!socketWatcher.waitForSocket(() -> this.shutdownRequested) || this.shutdownRequested) {
           break;
         }
 
         final RemoteConsoleSession.SessionOutcome sessionOutcome = this.runSession(socketPath);
-        switch (sessionOutcome.disconnectReason()) {
-          case USER_EOF -> this.exitReason = ExitReason.USER_EOF;
-          case UNRECOVERABLE_HANDSHAKE_FAILURE -> {
-            if (!ignoreUnrecoverableHandshake) {
-              this.exitReason = ExitReason.UNRECOVERABLE_HANDSHAKE_FAILURE;
-            }
-          }
-        }
+        this.updateExitReason(sessionOutcome, ignoreUnrecoverableHandshake);
         if (sessionOutcome.didConnect()) {
           LOGGER.info(text("Disconnected from server.", NamedTextColor.RED, TextDecoration.BOLD));
           retryCount = 0;
@@ -76,7 +61,6 @@ public final class EndermuxClient {
 
         retryCount++;
         final long backoffMs = this.retryBackoffMs(retryCount);
-
         if (backoffMs > 0L && socketWatcher.exists()) {
           LOGGER.info("Reconnecting in {}...", formatBackoff(backoffMs));
         }
@@ -108,7 +92,7 @@ public final class EndermuxClient {
       && ignoreUnrecoverableHandshake) {
       return false;
     }
-    return sessionOutcome.quitClient();
+    return sessionOutcome.disconnectReason().quitClientByDefault();
   }
 
   private RemoteConsoleSession.SessionOutcome runSession(final String socketPath) {
@@ -142,6 +126,22 @@ public final class EndermuxClient {
         this.shutdownRequested = true;
       }
     });
+  }
+
+  private void updateExitReason(
+    final RemoteConsoleSession.SessionOutcome sessionOutcome,
+    final boolean ignoreUnrecoverableHandshake
+  ) {
+    switch (sessionOutcome.disconnectReason()) {
+      case USER_EOF -> this.exitReason = ExitReason.USER_EOF;
+      case UNRECOVERABLE_HANDSHAKE_FAILURE -> {
+        if (!ignoreUnrecoverableHandshake) {
+          this.exitReason = ExitReason.UNRECOVERABLE_HANDSHAKE_FAILURE;
+        }
+      }
+      default -> {
+      }
+    }
   }
 
   private long retryBackoffMs(final int attempt) {

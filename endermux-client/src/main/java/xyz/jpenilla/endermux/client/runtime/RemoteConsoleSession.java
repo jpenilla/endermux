@@ -40,7 +40,7 @@ final class RemoteConsoleSession {
   private volatile @Nullable SocketTransport socketClient;
   private volatile boolean interactiveAvailable;
   private volatile boolean suppressNextInterruptHint;
-  private @Nullable LineReader lineReader;
+  private volatile @Nullable LineReader lineReader;
 
   RemoteConsoleSession(
     final String socketPath,
@@ -78,15 +78,15 @@ final class RemoteConsoleSession {
       client.sendMessage(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
 
       final boolean userQuit = this.acceptInput();
-      return new SessionOutcome(didConnect, userQuit, userQuit ? DisconnectReason.USER_EOF : DisconnectReason.GRACEFUL_SERVER_OR_USER_INTERRUPT);
+      return new SessionOutcome(didConnect, userQuit ? DisconnectReason.USER_EOF : DisconnectReason.GRACEFUL_SERVER_OR_USER_INTERRUPT);
     } catch (final HandshakeFatalException e) {
       final String message = e.userFacingMessage();
       LOGGER.error(message);
-      return new SessionOutcome(didConnect, true, DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE);
+      return new SessionOutcome(didConnect, DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE);
     } catch (final Exception e) {
       LOGGER.debug("Connection failure", e);
       LOGGER.error("Connection failed: {}", e.getMessage());
-      return new SessionOutcome(didConnect, false, DisconnectReason.GENERIC_CONNECTION_ERROR);
+      return new SessionOutcome(didConnect, DisconnectReason.GENERIC_CONNECTION_ERROR);
     } finally {
       this.cleanup();
     }
@@ -262,8 +262,7 @@ final class RemoteConsoleSession {
       final boolean changed = this.interactiveAvailable != available;
       this.interactiveAvailable = available;
       if (changed) {
-        this.suppressNextInterruptHint = true;
-        this.terminalContext.interruptActiveReader(this.lineReader);
+        this.suppressNextInterruptHint = this.terminalContext.interruptActiveReader(this.lineReader);
       }
     }
   }
@@ -323,15 +322,24 @@ final class RemoteConsoleSession {
   }
 
   enum DisconnectReason {
-    USER_EOF,
-    GRACEFUL_SERVER_OR_USER_INTERRUPT,
-    UNRECOVERABLE_HANDSHAKE_FAILURE,
-    GENERIC_CONNECTION_ERROR
+    USER_EOF(true),
+    GRACEFUL_SERVER_OR_USER_INTERRUPT(false),
+    UNRECOVERABLE_HANDSHAKE_FAILURE(true),
+    GENERIC_CONNECTION_ERROR(false);
+
+    private final boolean quitClientByDefault;
+
+    DisconnectReason(final boolean quitClientByDefault) {
+      this.quitClientByDefault = quitClientByDefault;
+    }
+
+    boolean quitClientByDefault() {
+      return this.quitClientByDefault;
+    }
   }
 
   record SessionOutcome(
     boolean didConnect,
-    boolean quitClient,
     DisconnectReason disconnectReason
   ) {
   }

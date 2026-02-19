@@ -9,7 +9,6 @@ class EndermuxClientTest {
   @Test
   void shouldQuitClientAlwaysForUserEof() {
     final RemoteConsoleSession.SessionOutcome outcome = outcome(
-      true,
       RemoteConsoleSession.DisconnectReason.USER_EOF
     );
     assertTrue(EndermuxClient.shouldQuitClient(outcome, false));
@@ -19,7 +18,6 @@ class EndermuxClientTest {
   @Test
   void shouldQuitClientForUnrecoverableHandshakeByDefault() {
     final RemoteConsoleSession.SessionOutcome outcome = outcome(
-      true,
       RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
     );
     assertTrue(EndermuxClient.shouldQuitClient(outcome, false));
@@ -28,7 +26,6 @@ class EndermuxClientTest {
   @Test
   void shouldContinueForUnrecoverableHandshakeWhenIgnored() {
     final RemoteConsoleSession.SessionOutcome outcome = outcome(
-      true,
       RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
     );
     assertFalse(EndermuxClient.shouldQuitClient(outcome, true));
@@ -37,7 +34,6 @@ class EndermuxClientTest {
   @Test
   void shouldKeepRunningForGenericConnectionFailure() {
     final RemoteConsoleSession.SessionOutcome outcome = outcome(
-      false,
       RemoteConsoleSession.DisconnectReason.GENERIC_CONNECTION_ERROR
     );
     assertFalse(EndermuxClient.shouldQuitClient(outcome, false));
@@ -45,9 +41,8 @@ class EndermuxClientTest {
   }
 
   private static RemoteConsoleSession.SessionOutcome outcome(
-    final boolean quitClient,
     final RemoteConsoleSession.DisconnectReason reason
   ) {
-    return new RemoteConsoleSession.SessionOutcome(false, quitClient, reason);
+    return new RemoteConsoleSession.SessionOutcome(false, reason);
   }
 }
