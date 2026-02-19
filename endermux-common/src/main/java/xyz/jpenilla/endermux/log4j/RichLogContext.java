@@ -22,13 +22,13 @@ public final class RichLogContext {
   private RichLogContext() {
   }
 
-  public static Scope pushRenderedByColorLevel(final Function<ColorLevel, String> renderedByColorLevel) {
+  public static Scope pushRenderedByColorLevel(final Function<ANSIComponentSerializer, String> renderedByColorLevel) {
     return pushRenderedByColorLevel(
-      renderedByColorLevel.apply(ColorLevel.NONE),
-      renderedByColorLevel.apply(ColorLevel.INDEXED_8),
-      renderedByColorLevel.apply(ColorLevel.INDEXED_16),
-      renderedByColorLevel.apply(ColorLevel.INDEXED_256),
-      renderedByColorLevel.apply(ColorLevel.TRUE_COLOR)
+      renderedByColorLevel.apply(ColorLevelContext.ANSI_NONE),
+      renderedByColorLevel.apply(ColorLevelContext.ANSI_INDEXED_8),
+      renderedByColorLevel.apply(ColorLevelContext.ANSI_INDEXED_16),
+      renderedByColorLevel.apply(ColorLevelContext.ANSI_INDEXED_256),
+      renderedByColorLevel.apply(ColorLevelContext.ANSI_TRUE_COLOR)
     );
   }
 
