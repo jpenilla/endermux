@@ -34,23 +34,18 @@ public final class TerminalOutput {
   public static void write(final String message) {
     synchronized (LOCK) {
       final LineReader lineReader = LINE_READER.get();
-      final boolean reading = lineReader != null && lineReader.isReading();
-      if (reading) {
-        lineReader.callWidget(LineReader.CLEAR);
+      if (lineReader != null) {
+        lineReader.printAbove(message);
+        return;
       }
 
-      final Terminal terminal = lineReader != null ? lineReader.getTerminal() : TERMINAL.get();
+      final Terminal terminal = TERMINAL.get();
       if (terminal != null) {
         terminal.writer().print(message);
         terminal.writer().flush();
       } else {
         originalOut().print(message);
         originalOut().flush();
-      }
-
-      if (reading) {
-        lineReader.callWidget(LineReader.REDRAW_LINE);
-        lineReader.callWidget(LineReader.REDISPLAY);
       }
     }
   }
