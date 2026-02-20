@@ -301,6 +301,12 @@ class EndermuxServerIntegrationTest {
       assertEquals(MessageType.INTERACTIVITY_STATUS, client.readMessageWithTimeout(Duration.ofSeconds(2)).type());
 
       client.send(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
+      final String pingRequestId = UUID.randomUUID().toString();
+      client.send(Message.response(pingRequestId, MessageType.PING, new Payloads.Ping()));
+      final Message<?> pong = client.readMessageWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(pong);
+      assertEquals(MessageType.PONG, pong.type());
+      assertEquals(pingRequestId, pong.requestId());
 
       final String logLine = "x".repeat(2048);
       this.server.broadcastLog(level -> logLine);
