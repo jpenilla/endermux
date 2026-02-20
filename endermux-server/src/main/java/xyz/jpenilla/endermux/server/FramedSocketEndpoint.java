@@ -14,6 +14,7 @@ import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import xyz.jpenilla.endermux.protocol.ConnectionState;
+import xyz.jpenilla.endermux.protocol.FrameCompressionType;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageSerializer;
@@ -23,6 +24,7 @@ import xyz.jpenilla.endermux.protocol.ProtocolException;
 public final class FramedSocketEndpoint implements SocketEndpoint {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(FramedSocketEndpoint.class);
+  private static final int GZIP_THRESHOLD_BYTES = 1024;
 
   private final SocketChannel socketChannel;
   private final MessageSerializer serializer;
@@ -72,8 +74,15 @@ public final class FramedSocketEndpoint implements SocketEndpoint {
     }
 
     final byte[] json = this.serializer.serialize(message).getBytes(StandardCharsets.UTF_8);
-    FrameCodec.writeFrame(this.writer, json);
+    final FrameCompressionType compression = shouldCompress(json)
+      ? FrameCompressionType.GZIP
+      : FrameCompressionType.NONE;
+    FrameCodec.writeFrame(this.writer, json, compression);
     return true;
+  }
+
+  private static boolean shouldCompress(final byte[] jsonPayload) {
+    return jsonPayload.length >= GZIP_THRESHOLD_BYTES;
   }
 
   @Override

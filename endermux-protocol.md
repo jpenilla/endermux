@@ -1,7 +1,7 @@
 # Endermux Protocol Specification
 
 Status: Active  
-Transport epoch: `16`
+Transport epoch: `17`
 
 This document defines the wire protocol implemented by `endermux-client` and `endermux-server`.
 
@@ -11,7 +11,7 @@ The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are to be in
 
 ## 2. Versioning Model
 
-1. Transport compatibility is versioned by `SocketProtocolConstants.TRANSPORT_EPOCH` (`16`).
+1. Transport compatibility is versioned by `SocketProtocolConstants.TRANSPORT_EPOCH` (`17`).
 2. `TRANSPORT_EPOCH` covers framing, envelope shape, and handshake schema.
 3. Feature behavior is negotiated per capability (see Section 8).
 4. Any wire-incompatible transport change MUST increment `TRANSPORT_EPOCH`.
@@ -22,10 +22,14 @@ The key words `MUST`, `MUST NOT`, `SHOULD`, `SHOULD NOT`, and `MAY` are to be in
 1. Transport is a Unix domain socket.
 2. Each protocol message is one frame:
    1. 4-byte signed big-endian length prefix.
-   2. UTF-8 JSON payload bytes.
-3. Frame length MUST be `> 0` and `<= 1048576` bytes (`1 MiB`).
+   2. 1-byte compression format (`0` = none, `1` = gzip).
+   3. Payload bytes (compression depends on the format byte).
+3. Frame length MUST be `> 0` and `<= 1048577` bytes (`1 MiB` compressed payload + 1-byte compression type).
 4. EOF while reading the length prefix is treated as a clean close.
-5. Invalid frame length is a protocol error.
+5. Unknown compression format is a protocol error.
+6. Invalid frame length is a protocol error.
+7. Compressed payload bytes (excluding the compression type byte) MUST be `<= 1048576` bytes (`1 MiB`).
+8. Uncompressed payload bytes (after decompression) MUST be `<= 4194304` bytes (`4 MiB`).
 
 ## 4. Message Envelope
 
@@ -174,7 +178,7 @@ Clients MAY implement specialized handling for known `REJECT.reason` values and 
 
 Capability names are lowercase strings.
 
-Baseline capabilities in transport epoch `16`:
+Baseline capabilities in transport epoch `17`:
 
 1. Required by client:
    1. `command_execute`
@@ -230,7 +234,8 @@ Negotiation rules:
 | Handshake timeout join grace | `1000ms` |
 | Completion timeout | `5000ms` |
 | Syntax highlight timeout | `1000ms` |
-| Max frame size | `1 MiB` |
+| Max compressed payload size | `1 MiB` |
+| Max uncompressed payload size | `4 MiB` |
 
 ## 13. Compatibility Policy
 

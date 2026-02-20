@@ -2,8 +2,10 @@ package xyz.jpenilla.endermux.server;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
+import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
@@ -17,12 +19,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.zip.GZIPInputStream;
 import net.kyori.ansi.ColorLevel;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import xyz.jpenilla.endermux.ansi.ColorLevelContext;
 import xyz.jpenilla.endermux.protocol.CapabilityVersionRange;
+import xyz.jpenilla.endermux.protocol.FrameCompressionType;
 import xyz.jpenilla.endermux.protocol.FrameCodec;
 import xyz.jpenilla.endermux.protocol.HandshakeRejectReasons;
 import xyz.jpenilla.endermux.protocol.Message;
@@ -283,6 +287,35 @@ class EndermuxServerIntegrationTest {
   }
 
   @Test
+  void logForwardLargePayloadUsesGzipCompression() throws Exception {
+    final Path socket = this.startServer();
+
+    try (TestClient client = TestClient.connect(socket)) {
+      final String helloRequestId = UUID.randomUUID().toString();
+      client.send(Message.response(
+        helloRequestId,
+        MessageType.HELLO,
+        hello(ColorLevel.INDEXED_16)
+      ));
+      assertEquals(MessageType.WELCOME, client.readMessageWithTimeout(Duration.ofSeconds(2)).type());
+      assertEquals(MessageType.INTERACTIVITY_STATUS, client.readMessageWithTimeout(Duration.ofSeconds(2)).type());
+
+      client.send(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
+
+      final String logLine = "x".repeat(2048);
+      this.server.broadcastLog(level -> logLine);
+
+      final TestClient.RawFrame rawFrame = client.readRawFrameWithTimeout(Duration.ofSeconds(2));
+      assertNotNull(rawFrame);
+      assertEquals(FrameCompressionType.GZIP.wireValue(), rawFrame.compressionType());
+      assertNotNull(rawFrame.message());
+      assertEquals(MessageType.LOG_FORWARD, rawFrame.message().type());
+      final Payloads.LogForward payload = (Payloads.LogForward) rawFrame.message().payload();
+      assertEquals(logLine, payload.rendered());
+    }
+  }
+
+  @Test
   void completionRequestUsesSessionColorContext() throws Exception {
     final Path socket = this.startServer();
     this.server.enableInteractivity(InteractiveConsoleHooks.builder()
@@ -419,8 +452,31 @@ class EndermuxServerIntegrationTest {
     }
 
     Message<?> readMessageWithTimeout(final Duration timeout) throws IOException {
-      final byte[] data = TimedRead.read(
-        () -> FrameCodec.readFrame(this.input),
+      final RawFrame frame = this.readRawFrameWithTimeout(timeout);
+      return frame == null ? null : frame.message();
+    }
+
+    RawFrame readRawFrameWithTimeout(final Duration timeout) throws IOException {
+      return TimedRead.read(
+        () -> {
+          final int length;
+          try {
+            length = this.input.readInt();
+          } catch (final EOFException e) {
+            return null;
+          }
+          final int compressionType = this.input.readUnsignedByte();
+          final byte[] payload = new byte[length - 1];
+          this.input.readFully(payload);
+          final byte[] messageBytes = switch (FrameCompressionType.fromWireValue(compressionType)) {
+            case NONE -> payload;
+            case GZIP -> ungzip(payload);
+          };
+          return new RawFrame(
+            compressionType,
+            this.serializer.deserialize(new String(messageBytes, java.nio.charset.StandardCharsets.UTF_8))
+          );
+        },
         timeout.toMillis(),
         "Timed out waiting for test client read",
         () -> {
@@ -431,10 +487,15 @@ class EndermuxServerIntegrationTest {
         },
         200L
       );
-      if (data == null) {
-        return null;
+    }
+
+    private static byte[] ungzip(final byte[] payload) throws IOException {
+      try (ByteArrayInputStream input = new ByteArrayInputStream(payload); GZIPInputStream gzip = new GZIPInputStream(input)) {
+        return gzip.readAllBytes();
       }
-      return this.serializer.deserialize(new String(data, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    record RawFrame(int compressionType, Message<?> message) {
     }
 
     @Override
