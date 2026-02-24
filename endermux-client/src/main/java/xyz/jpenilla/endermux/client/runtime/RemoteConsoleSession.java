@@ -10,7 +10,6 @@ import net.kyori.adventure.text.format.NamedTextColor;
 import net.kyori.adventure.text.format.TextDecoration;
 import net.kyori.adventure.text.logger.slf4j.ComponentLogger;
 import org.jline.reader.EndOfFileException;
-import org.jline.reader.Highlighter;
 import org.jline.reader.LineReader;
 import org.jline.reader.UserInterruptException;
 import org.jspecify.annotations.NullMarked;
@@ -25,9 +24,8 @@ import xyz.jpenilla.endermux.protocol.Payloads;
 import static net.kyori.adventure.text.Component.text;
 
 @NullMarked
-final class RemoteConsoleSession {
+public final class RemoteConsoleSession {
   private static final String TERMINAL_PROMPT = "> ";
-  private static final String DISCONNECTING_MESSAGE = "Disconnecting...";
   private static final String DISCONNECT_HINT_MESSAGE = "Press Ctrl+D to disconnect from console.";
   private static final long SOCKET_POLL_INTERVAL_MS = 500;
   private static final ComponentLogger LOGGER = ComponentLogger.logger(RemoteConsoleSession.class);
@@ -71,14 +69,17 @@ final class RemoteConsoleSession {
         .append(text(this.socketPath))
         .build());
 
-      final Highlighter highlighter = new RemoteHighlighter(client);
-      this.lineReader = this.terminalContext.createLineReader(client, highlighter);
+      this.lineReader = this.terminalContext.createLineReader(this, client);
       TerminalOutput.setLineReader(this.lineReader);
 
       client.sendMessage(Message.unsolicited(MessageType.LOG_SUBSCRIBE, new Payloads.LogSubscribe()));
 
-      final boolean userQuit = this.acceptInput();
-      return new SessionOutcome(didConnect, userQuit ? DisconnectReason.USER_EOF : DisconnectReason.GRACEFUL_SERVER_OR_USER_INTERRUPT);
+      final AcceptInputResult acceptInputResult = this.acceptInput();
+
+      return new SessionOutcome(
+        didConnect,
+        acceptInputResult == AcceptInputResult.USER_QUIT ? DisconnectReason.USER_EOF : DisconnectReason.CONNECTION_CLOSED
+      );
     } catch (final HandshakeFatalException e) {
       final String message = e.userFacingMessage();
       LOGGER.error(message);
@@ -118,7 +119,12 @@ final class RemoteConsoleSession {
     TerminalOutput.setLineReader(null);
   }
 
-  private boolean acceptInput() {
+  private enum AcceptInputResult {
+    USER_QUIT,
+    CONNECTION_CLOSED
+  }
+
+  private AcceptInputResult acceptInput() {
     if (this.terminalContext.isDumbTerminal()) {
       return this.acceptInputDumb();
     }
@@ -129,58 +135,49 @@ final class RemoteConsoleSession {
     return this.acceptInputInteractive(sessionReader);
   }
 
-  private boolean acceptInputInteractive(final LineReader sessionReader) {
+  private AcceptInputResult acceptInputInteractive(final LineReader sessionReader) {
     while (true) {
-      try {
-        final SocketTransport client = this.connectedClient();
-        if (client == null) {
-          return false;
-        }
-
-        this.updateReaderMode(sessionReader);
-        final String prompt = this.interactiveAvailable ? TERMINAL_PROMPT : "";
-        final String input = sessionReader.readLine(prompt);
-        if (input == null) {
-          return this.userRequestedDisconnect();
-        }
-
-        final String trimmedInput = input.trim();
-        if (trimmedInput.isEmpty()) {
-          continue;
-        }
-        if (!this.interactiveAvailable) {
-          LOGGER.debug("Ignoring input while interactivity is unavailable");
-          continue;
-        }
-        this.sendCommand(client, trimmedInput);
-      } catch (final EndOfFileException e) {
-        return this.userRequestedDisconnect();
-      } catch (final UserInterruptException e) {
-        if (this.connectedClient() == null) {
-          Thread.interrupted();
-          return false;
-        }
-        if (this.consumeSuppressedInterruptHint()) {
-          continue;
-        }
-        this.printDisconnectHint();
-      } catch (final IOError e) {
-        Thread.interrupted();
-        if (this.connectedClient() == null || this.shutdownRequested.getAsBoolean()) {
-          return false;
-        }
-        LOGGER.debug("Ignoring terminal IO error while reading input", e);
-        this.printDisconnectHint();
+      final SocketTransport client = this.connectedClient();
+      if (client == null) {
+        return AcceptInputResult.CONNECTION_CLOSED;
       }
+      this.updateReaderMode(sessionReader);
+
+      final String input;
+      try {
+        input = sessionReader.readLine(getTerminalPrompt(this.interactiveAvailable));
+      } catch (final UserInterruptException e) {
+        this.printDisconnectHint();
+        continue;
+      } catch (final EndOfFileException e) {
+        return AcceptInputResult.USER_QUIT;
+      } catch (final IOError e) {
+        LOGGER.warn("Terminal IO error while reading input", e);
+        continue;
+      }
+
+      if (input == null) {
+        return AcceptInputResult.USER_QUIT;
+      }
+
+      final String trimmedInput = input.trim();
+      if (trimmedInput.isEmpty()) {
+        continue;
+      }
+      if (!this.interactiveAvailable) {
+        LOGGER.debug("Ignoring input while interactivity is unavailable");
+        continue;
+      }
+      this.sendCommand(client, trimmedInput);
     }
   }
 
-  private boolean acceptInputDumb() {
+  private AcceptInputResult acceptInputDumb() {
     final BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
     while (true) {
       final SocketTransport client = this.connectedClient();
       if (client == null) {
-        return false;
+        return AcceptInputResult.CONNECTION_CLOSED;
       }
 
       final String input;
@@ -189,18 +186,18 @@ final class RemoteConsoleSession {
       } catch (final IOException e) {
         LOGGER.error("Error reading stdin: {}", e.getMessage());
         LOGGER.debug("Error reading stdin", e);
-        return false;
+        return AcceptInputResult.CONNECTION_CLOSED;
       }
 
       if (input == null) {
         if (this.connectedClient() == null || this.shutdownRequested.getAsBoolean()) {
-          return false;
+          return AcceptInputResult.CONNECTION_CLOSED;
         }
         if (!this.terminalContext.hasConsoleInput()) {
           this.sleepForInput();
           continue;
         }
-        return this.userRequestedDisconnect();
+        return AcceptInputResult.USER_QUIT;
       }
 
       final String trimmedInput = input.trim();
@@ -252,8 +249,8 @@ final class RemoteConsoleSession {
       return;
     }
 
-    if (type == MessageType.ERROR && message.payload() instanceof Payloads.Error(String message1, String details)) {
-      this.printError(message1, details);
+    if (type == MessageType.ERROR && message.payload() instanceof Payloads.Error(String errorMessage, String details)) {
+      this.printError(errorMessage, details);
       return;
     }
 
@@ -265,14 +262,6 @@ final class RemoteConsoleSession {
         this.suppressNextInterruptHint = this.terminalContext.interruptActiveReader(this.lineReader);
       }
     }
-  }
-
-  private boolean consumeSuppressedInterruptHint() {
-    if (!this.suppressNextInterruptHint) {
-      return false;
-    }
-    this.suppressNextInterruptHint = false;
-    return true;
   }
 
   private void updateReaderMode(final LineReader sessionReader) {
@@ -305,12 +294,21 @@ final class RemoteConsoleSession {
     return client;
   }
 
-  private boolean userRequestedDisconnect() {
-    LOGGER.info(DISCONNECTING_MESSAGE);
+  private boolean consumeSuppressedInterruptHint() {
+    if (!this.suppressNextInterruptHint) {
+      return false;
+    }
+    this.suppressNextInterruptHint = false;
     return true;
   }
 
-  private void printDisconnectHint() {
+  public void printDisconnectHint() {
+    if (this.consumeSuppressedInterruptHint()) {
+      return;
+    }
+    if (!this.isConnected()) {
+      return;
+    }
     LOGGER.info(DISCONNECT_HINT_MESSAGE);
   }
 
@@ -321,9 +319,13 @@ final class RemoteConsoleSession {
     }
   }
 
+  private static String getTerminalPrompt(final boolean interactive) {
+    return interactive ? TERMINAL_PROMPT : "";
+  }
+
   enum DisconnectReason {
     USER_EOF(true),
-    GRACEFUL_SERVER_OR_USER_INTERRUPT(false),
+    CONNECTION_CLOSED(false),
     UNRECOVERABLE_HANDSHAKE_FAILURE(true),
     GENERIC_CONNECTION_ERROR(false);
 

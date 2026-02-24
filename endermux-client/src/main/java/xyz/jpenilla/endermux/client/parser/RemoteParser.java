@@ -5,6 +5,7 @@ import org.jline.reader.ParsedLine;
 import org.jline.reader.Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.jpenilla.endermux.client.runtime.RemoteConsoleSession;
 import xyz.jpenilla.endermux.client.transport.SocketTransport;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageType;
@@ -14,9 +15,11 @@ import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 
 public final class RemoteParser implements Parser {
   private static final Logger LOGGER = LoggerFactory.getLogger(RemoteParser.class);
+  private final RemoteConsoleSession session;
   private final SocketTransport socketClient;
 
-  public RemoteParser(final SocketTransport socketClient) {
+  public RemoteParser(final RemoteConsoleSession session, final SocketTransport socketClient) {
+    this.session = session;
     this.socketClient = socketClient;
   }
 
@@ -54,7 +57,9 @@ public final class RemoteParser implements Parser {
           parseResponse.cursor()
         );
       }
-    } catch (final IOException | InterruptedException e) {
+    } catch (final InterruptedException e) {
+      this.session.printDisconnectHint();
+    } catch (final IOException e) {
       LOGGER.debug("Failed to request parse data", e);
     }
     return new RemoteParsedLine("", 0, 0, java.util.List.of(), line, cursor);

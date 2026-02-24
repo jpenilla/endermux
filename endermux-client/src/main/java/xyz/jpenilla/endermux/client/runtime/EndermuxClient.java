@@ -54,8 +54,7 @@ public final class EndermuxClient {
         if (sessionOutcome.disconnectReason() == RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
           && ignoreUnrecoverableHandshake) {
           LOGGER.warn("Retrying despite unrecoverable handshake failure because --ignore-unrecoverable-handshake is enabled.");
-        }
-        if (shouldQuitClient(sessionOutcome, ignoreUnrecoverableHandshake)) {
+        } else if (sessionOutcome.disconnectReason().quitClientByDefault()) {
           break;
         }
 
@@ -82,17 +81,6 @@ public final class EndermuxClient {
       LOGGER.info("Goodbye!");
     }
     return exitReason == null ? 0 : exitReason.exitCode();
-  }
-
-  static boolean shouldQuitClient(
-    final RemoteConsoleSession.SessionOutcome sessionOutcome,
-    final boolean ignoreUnrecoverableHandshake
-  ) {
-    if (sessionOutcome.disconnectReason() == RemoteConsoleSession.DisconnectReason.UNRECOVERABLE_HANDSHAKE_FAILURE
-      && ignoreUnrecoverableHandshake) {
-      return false;
-    }
-    return sessionOutcome.disconnectReason().quitClientByDefault();
   }
 
   private RemoteConsoleSession.SessionOutcome runSession(final String socketPath) {

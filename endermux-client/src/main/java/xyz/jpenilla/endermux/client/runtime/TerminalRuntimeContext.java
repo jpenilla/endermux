@@ -2,7 +2,6 @@ package xyz.jpenilla.endermux.client.runtime;
 
 import java.io.IOException;
 import java.io.InterruptedIOException;
-import org.jline.reader.Highlighter;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
 import org.jline.terminal.Terminal;
@@ -73,16 +72,16 @@ final class TerminalRuntimeContext implements AutoCloseable {
     term.handle(Terminal.Signal.INT, signal -> handler.run());
   }
 
-  @Nullable LineReader createLineReader(final SocketTransport socketClient, final Highlighter highlighter) {
+  @Nullable LineReader createLineReader(final RemoteConsoleSession session, final SocketTransport socketClient) {
     if (this.mode == TerminalMode.DUMB) {
       return null;
     }
     return LineReaderBuilder.builder()
       .appName("Endermux Client")
       .terminal(this.terminal)
-      .completer(new RemoteCommandCompleter(socketClient))
-      .highlighter(highlighter)
-      .parser(new RemoteParser(socketClient))
+      .completer(new RemoteCommandCompleter(session, socketClient))
+      .highlighter(new RemoteHighlighter(socketClient))
+      .parser(new RemoteParser(session, socketClient))
       .completionMatcher(new MinecraftCompletionMatcher())
       .option(LineReader.Option.INSERT_TAB, false)
       .option(LineReader.Option.DISABLE_EVENT_EXPANSION, true)

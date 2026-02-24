@@ -17,14 +17,13 @@ import picocli.CommandLine.Command;
 import picocli.CommandLine.Option;
 import xyz.jpenilla.endermux.client.runtime.EndermuxClient;
 import xyz.jpenilla.endermux.client.runtime.StreamRedirection;
-import xyz.jpenilla.endermux.client.runtime.TerminalOutput;
 
 import static net.kyori.adventure.text.Component.text;
 
 @Command(
   name = "endermux-client",
   mixinStandardHelpOptions = true,
-  versionProvider = EndermuxCli.ManifestVersionProvider.class,
+  versionProvider = EndermuxCli.VersionProvider.class,
   description = "Endermux Client - Fully-featured remote console experience for Minecraft servers implementing the Endermux protocol."
 )
 @NullMarked
@@ -65,27 +64,32 @@ public final class EndermuxCli implements Callable<Integer> {
 
   @Override
   public Integer call() {
-    this.configureLogging();
     try {
-      return new EndermuxClient().run(this.socketPath, this.ignoreUnrecoverableHandshake);
+      StreamRedirection.replaceStreams();
+
+      if (this.debug) {
+        this.enableDebugLogging();
+      }
+
+      final EndermuxClient client = new EndermuxClient();
+      return client.run(this.socketPath, this.ignoreUnrecoverableHandshake);
     } catch (final Exception e) {
       LOGGER.error("Error starting Endermux client", e);
       return 1;
+    } finally {
+      LogManager.shutdown();
+      StreamRedirection.restoreOriginalStreams();
     }
   }
 
-  private void configureLogging() {
-    TerminalOutput.captureOriginalStreams(System.out, System.err);
+  private void enableDebugLogging() {
     final LoggerContext context = (LoggerContext) LogManager.getContext(false);
-    if (this.debug) {
-      final LoggerConfig root = context.getConfiguration().getRootLogger();
-      root.setLevel(Level.DEBUG);
-      context.updateLoggers();
-    }
-    StreamRedirection.install();
+    final LoggerConfig root = context.getConfiguration().getRootLogger();
+    root.setLevel(Level.DEBUG);
+    context.updateLoggers();
   }
 
-  static class ManifestVersionProvider implements CommandLine.IVersionProvider {
+  static class VersionProvider implements CommandLine.IVersionProvider {
     @Override
     public String[] getVersion() {
       return new String[]{

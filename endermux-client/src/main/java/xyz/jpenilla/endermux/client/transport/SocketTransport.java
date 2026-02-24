@@ -325,14 +325,8 @@ public final class SocketTransport {
     final CompletableFuture<Message<?>> future,
     final MessageType expectedResponseType,
     final long timeoutMs
-  ) throws ExecutionException, TimeoutException, IOException {
-    final Message<?> response;
-    try {
-      response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
-    } catch (final InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IOException("Interrupted while waiting for response", e);
-    }
+  ) throws ExecutionException, TimeoutException, IOException, InterruptedException {
+    final Message<?> response = future.get(timeoutMs, TimeUnit.MILLISECONDS);
     if (response.type() == MessageType.ERROR && response.payload() instanceof Payloads.Error(String error, String details)) {
       throw new IOException(details != null ? error + ": " + details : error);
     }

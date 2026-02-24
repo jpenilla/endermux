@@ -9,6 +9,7 @@ import org.jline.reader.ParsedLine;
 import org.jspecify.annotations.NullMarked;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import xyz.jpenilla.endermux.client.runtime.RemoteConsoleSession;
 import xyz.jpenilla.endermux.client.transport.SocketTransport;
 import xyz.jpenilla.endermux.jline.MinecraftCandidate;
 import xyz.jpenilla.endermux.protocol.Message;
@@ -22,9 +23,11 @@ public final class RemoteCommandCompleter implements Completer {
 
   private static final Logger LOGGER = LoggerFactory.getLogger(RemoteCommandCompleter.class);
 
+  private final RemoteConsoleSession session;
   private final SocketTransport socketClient;
 
-  public RemoteCommandCompleter(final SocketTransport socketClient) {
+  public RemoteCommandCompleter(final RemoteConsoleSession session, final SocketTransport socketClient) {
+    this.session = session;
     this.socketClient = socketClient;
   }
 
@@ -62,7 +65,9 @@ public final class RemoteCommandCompleter implements Completer {
           ));
         }
       }
-    } catch (final IOException | InterruptedException e) {
+    } catch (final InterruptedException e) {
+      this.session.printDisconnectHint();
+    } catch (final IOException e) {
       LOGGER.debug("Failed to request completions", e);
     }
   }

@@ -92,7 +92,7 @@ public final class RemoteHighlighter implements Highlighter {
       try {
         final String highlighted = this.socketClient.getSyntaxHighlight(buffer);
         this.highlightCache.put(buffer, highlighted);
-        this.redrawIfRelevant(buffer);
+        this.redisplayIfRelevant(buffer);
       } catch (final IOException | InterruptedException e) {
         LOGGER.debug("Failed to request syntax highlight", e);
       } finally {
@@ -112,15 +112,15 @@ public final class RemoteHighlighter implements Highlighter {
     return null;
   }
 
-  private void redrawIfRelevant(final String buffer) {
+  private void redisplayIfRelevant(final String buffer) {
     final String latest = this.latestBuffer;
     if (!latest.equals(buffer) && !latest.startsWith(buffer)) {
       return;
     }
     try {
-      TerminalOutput.redrawLineIfReading();
+      TerminalOutput.redisplay();
     } catch (final RuntimeException e) {
-      LOGGER.debug("Failed to redraw line after async highlight", e);
+      LOGGER.debug("Failed to redisplay line after async highlight", e);
     }
   }
 
