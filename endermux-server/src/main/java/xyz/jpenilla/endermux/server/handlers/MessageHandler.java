@@ -9,7 +9,5 @@ public interface MessageHandler<T extends MessagePayload> {
 
   MessageType type();
 
-  Class<T> payloadType();
-
   void handle(T payload, ResponseContext ctx);
 }

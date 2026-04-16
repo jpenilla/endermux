@@ -92,12 +92,6 @@ public final class RichLogContext {
     }
   }
 
-  private static ANSIComponentSerializer serializer(final ColorLevel colorLevel) {
-    return ANSIComponentSerializer.builder()
-      .colorLevel(colorLevel)
-      .build();
-  }
-
   @FunctionalInterface
   public interface Scope extends AutoCloseable {
     @Override

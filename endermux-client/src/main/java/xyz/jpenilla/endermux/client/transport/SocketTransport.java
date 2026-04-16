@@ -143,13 +143,9 @@ public final class SocketTransport {
     final MessageType expectedResponseType,
     final long timeoutMs
   ) throws IOException, InterruptedException {
-    final @Nullable String requiredCapability = message.type().capability();
-    if (requiredCapability != null && !this.supportsCapability(requiredCapability)) {
-      throw new IOException("Capability not negotiated: " + requiredCapability);
-    }
-
-    if (message.type().requiresInteractivity() && !this.interactivityAvailable) {
-      throw new IOException("Interactivity is currently unavailable");
+    final @Nullable String unavailableReason = this.unavailableReason(message.type());
+    if (unavailableReason != null) {
+      throw new IOException(unavailableReason);
     }
 
     if (message.requestId() == null) {
@@ -249,6 +245,21 @@ public final class SocketTransport {
 
   public boolean supportsCapability(final String capability) {
     return this.negotiatedCapabilities.containsKey(capability);
+  }
+
+  public boolean canUse(final MessageType type) {
+    return this.unavailableReason(type) == null;
+  }
+
+  private @Nullable String unavailableReason(final MessageType type) {
+    final @Nullable String requiredCapability = type.capability();
+    if (requiredCapability != null && !this.supportsCapability(requiredCapability)) {
+      return "Capability not negotiated: " + requiredCapability;
+    }
+    if (type.requiresInteractivity() && !this.interactivityAvailable) {
+      return "Interactivity is currently unavailable";
+    }
+    return null;
   }
 
   private void performHandshake() throws IOException, HandshakeFatalException {

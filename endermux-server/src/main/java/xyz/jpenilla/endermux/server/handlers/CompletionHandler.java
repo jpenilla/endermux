@@ -26,11 +26,6 @@ public final class CompletionHandler implements MessageHandler<Payloads.Completi
   }
 
   @Override
-  public Class<Payloads.CompletionRequest> payloadType() {
-    return Payloads.CompletionRequest.class;
-  }
-
-  @Override
   public void handle(final Payloads.CompletionRequest payload, final ResponseContext ctx) {
     if (!ctx.hasRequestId()) {
       ctx.error("Completion requests require a requestId");

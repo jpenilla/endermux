@@ -26,11 +26,6 @@ public final class CommandHandler implements MessageHandler<Payloads.CommandExec
   }
 
   @Override
-  public Class<Payloads.CommandExecute> payloadType() {
-    return Payloads.CommandExecute.class;
-  }
-
-  @Override
   public void handle(final Payloads.CommandExecute payload, final ResponseContext ctx) {
     try {
       final InteractiveConsoleHooks currentHooks = this.hooks.get();

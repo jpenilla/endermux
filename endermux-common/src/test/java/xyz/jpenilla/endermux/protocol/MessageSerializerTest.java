@@ -32,7 +32,7 @@ class MessageSerializerTest {
 
   @Test
   void serializeOmitsRequestIdWhenNull() {
-    final Message<Payloads.Ping> message = Message.unsolicited(MessageType.PING, new Payloads.Ping());
+    final Message<Payloads.LogForward> message = Message.unsolicited(MessageType.LOG_FORWARD, new Payloads.LogForward("server started"));
     final String json = this.serializer.serialize(message);
     final JsonObject root = JsonParser.parseString(json).getAsJsonObject();
 

@@ -3,7 +3,6 @@ package xyz.jpenilla.endermux.server.handlers;
 import java.util.HashMap;
 import java.util.Map;
 import org.jspecify.annotations.NullMarked;
-import org.jspecify.annotations.Nullable;
 import xyz.jpenilla.endermux.protocol.MessagePayload;
 import xyz.jpenilla.endermux.protocol.MessageType;
 
@@ -14,14 +13,6 @@ public final class HandlerRegistry {
 
   public <T extends MessagePayload> void register(final MessageHandler<T> handler) {
     this.handlers.put(handler.type(), handler);
-  }
-
-  public @Nullable MessageHandler<?> get(final MessageType type) {
-    return this.handlers.get(type);
-  }
-
-  public boolean hasHandler(final MessageType type) {
-    return this.handlers.containsKey(type);
   }
 
   @SuppressWarnings("unchecked")

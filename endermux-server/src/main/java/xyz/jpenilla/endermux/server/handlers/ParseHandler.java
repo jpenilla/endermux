@@ -26,11 +26,6 @@ public final class ParseHandler implements MessageHandler<Payloads.ParseRequest>
   }
 
   @Override
-  public Class<Payloads.ParseRequest> payloadType() {
-    return Payloads.ParseRequest.class;
-  }
-
-  @Override
   public void handle(final Payloads.ParseRequest payload, final ResponseContext ctx) {
     if (!ctx.hasRequestId()) {
       ctx.error("Parse requests require a requestId");

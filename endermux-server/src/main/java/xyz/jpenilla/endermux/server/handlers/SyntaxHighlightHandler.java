@@ -26,11 +26,6 @@ public final class SyntaxHighlightHandler implements MessageHandler<Payloads.Syn
   }
 
   @Override
-  public Class<Payloads.SyntaxHighlightRequest> payloadType() {
-    return Payloads.SyntaxHighlightRequest.class;
-  }
-
-  @Override
   public void handle(final Payloads.SyntaxHighlightRequest payload, final ResponseContext ctx) {
     if (!ctx.hasRequestId()) {
       ctx.error("Syntax highlight requests require a requestId");

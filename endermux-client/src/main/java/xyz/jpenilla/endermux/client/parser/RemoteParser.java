@@ -10,7 +10,6 @@ import xyz.jpenilla.endermux.client.transport.SocketTransport;
 import xyz.jpenilla.endermux.protocol.Message;
 import xyz.jpenilla.endermux.protocol.MessageType;
 import xyz.jpenilla.endermux.protocol.Payloads;
-import xyz.jpenilla.endermux.protocol.ProtocolCapabilities;
 import xyz.jpenilla.endermux.protocol.SocketProtocolConstants;
 
 public final class RemoteParser implements Parser {
@@ -28,9 +27,7 @@ public final class RemoteParser implements Parser {
     if (context == ParseContext.ACCEPT_LINE) {
       return new RemoteParsedLine("", 0, 0, java.util.List.of(), line, cursor);
     }
-    if (!this.socketClient.isConnected()
-      || !this.socketClient.isInteractivityAvailable()
-      || !this.socketClient.supportsCapability(ProtocolCapabilities.PARSE)) {
+    if (!this.socketClient.isConnected() || !this.socketClient.canUse(MessageType.PARSE_REQUEST)) {
       return new RemoteParsedLine("", 0, 0, java.util.List.of(), line, cursor);
     }
 
