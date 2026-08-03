@@ -28,7 +28,7 @@ jobs:
             tar -xf "$archive" -C endermux-client-dist
           done
       - name: "upload artifacts"
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: 'endermux-client'
           path: 'endermux-client-dist/*'
