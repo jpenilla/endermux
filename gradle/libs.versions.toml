@@ -1,5 +1,5 @@
 [versions]
-indra = "4.0.0"
+indra = "4.1.0"
 log4j = "2.25.3"
 slf4j = "2.0.16"
 jline = "3.30.6"
