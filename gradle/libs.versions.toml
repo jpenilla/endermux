@@ -5,7 +5,7 @@ slf4j = "2.0.16"
 jline = "3.30.6"
 adventure = "4.26.1"
 kyoriAnsi = "1.1.1"
-jspecify = "1.0.0"
+jspecify = "1.0.1"
 picocli = "4.7.7"
 junit = "6.1.2"
 
