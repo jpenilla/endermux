@@ -24,7 +24,7 @@ slf4jApi = { module = "org.slf4j:slf4j-api", version.ref = "slf4j" }
 jline = { module = "org.jline:jline", version.ref = "jline" }
 jline-terminal-ffm = { module = "org.jline:jline-terminal-ffm", version.ref = "jline" }
 
-gson = "com.google.code.gson:gson:2.10.1"
+gson = "com.google.code.gson:gson:2.14.0"
 
 adventureApi = { module = "net.kyori:adventure-api", version.ref = "adventure" }
 ansi = { module = "net.kyori:ansi", version.ref = "kyoriAnsi" }
